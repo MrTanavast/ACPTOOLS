@@ -1,0 +1,27 @@
+Fecha Devengo;Asiento;SUBCUENTA;NOMBRE SUBCUENTA;DESCRIPCION;Documento;Debe;Haber
+01/01/2026;1;570000000;Caja, euros;ASIENTO DE APERTURA;;1.500,00;0
+01/01/2026;1;572000001;BANCO BILBAO VIZCAYA ARGENTARIA S.A. - ES65 0182;ASIENTO DE APERTURA;;8.500,00;
+01/01/2026;1;100000000;Capital social;ASIENTO DE APERTURA;;;10.000,00
+02/01/2026;2;629000000;Otros servicios;Pago nómina señor Muñoz – enero;F-001;248,02;0
+02/01/2026;3;600000000;Compras;Regularización con Debe y Haber;;100,00;100,00
+02/01/2026;2;572000001;Banco;Pago nómina señor Muñoz – enero;F-001;0;248,02
+03/01/2026;4;430000001;Cliente A;Descuadrado;;50,00;0
+03/01/2026;4;700000000;Ventas;Descuadrado;;0;40,00
+03/01/2026;5;572.5;Banco 5;Cuenta con punto;;75,5;0
+03/01/2026;5;430000001;Cliente A;Cuenta con punto;;0;75,5
+03/01/2026;6;43000001;Cliente corto;Cuenta mal;;10,00;0
+03/01/2026;6;700000000;Ventas;Cuenta mal;;0;10,00
+04/01/2026;7;572000001;Banco;Con linea a cero en medio;;20,00;0
+04/01/2026;7;600000000;Compras;Linea a cero;;0;0
+04/01/2026;7;400000001;Proveedor;Con linea a cero en medio;DOC7;0;20,00
+04/01/2026;8;572000001;Banco;Ultima linea a cero;;0;33,33
+04/01/2026;8;410000001;Acreedor;Ultima linea a cero;;33,33;0
+04/01/2026;8;600000000;Compras;Ultima linea a cero;;0;0
+05/01/2026;9;572000001;Banco;Mismo asiento otra fecha;;1,00;0
+05/01/2026;9;570000000;Caja;Mismo asiento otra fecha;;0;1,00
+06/01/2026;9;572000001;Banco;Mismo asiento otra fecha;;2,00;0
+06/01/2026;9;570000000;Caja;Mismo asiento otra fecha;;0;2,00
+31/02/2026;10;572000001;Banco;Fecha imposible;;5,00;0
+31/02/2026;10;570000000;Caja;Fecha imposible;;0;5,00
+07/01/2026;11;572000001;Banco;Importe no numerico;;abc;0
+07/01/2026;11;570000000;Caja;Importe no numerico;;0;5,00
