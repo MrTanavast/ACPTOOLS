@@ -166,10 +166,17 @@ Private Sub LeerLineasDiario(ByRef emp As TEmpresa, ByRef datos As Variant, ByRe
     Dim r As Long, ok As Boolean, errores As String, fecha As Date, fechaOk As Boolean
     Dim asiento As String, cuenta As String, cuentaNorm As String, motivo As String
     Dim debe As Currency, haber As Currency, nombre As String, descr As String, docu As String
+    Dim sepDec As String, k As Long
 
+    sepDec = SeparadorDecimalDiario(datos, col, filaInicio)
     For r = filaInicio To UBound(datos, 1)
         If Not FilaVacia(datos, r) Then
             errores = ""
+            For k = 1 To 8
+                If col(k) > 0 Then
+                    If IsError(datos(r, col(k))) Then errores = errores & "; error de fórmula (#N/D, #¡VALOR!...) en la columna " & k
+                End If
+            Next k
             fecha = LeerFecha(CeldaD(datos, r, col(DCOL_FECHA)), "DMA", fechaOk)
             If Not fechaOk Then errores = errores & "; fecha no válida [" & ValorTexto(CeldaD(datos, r, col(DCOL_FECHA))) & "]"
             asiento = ValorTexto(CeldaD(datos, r, col(DCOL_ASIENTO)))
@@ -180,9 +187,9 @@ Private Sub LeerLineasDiario(ByRef emp As TEmpresa, ByRef datos As Variant, ByRe
             nombre = ValorTexto(CeldaD(datos, r, col(DCOL_NOMBRE)))
             descr = ValorTexto(CeldaD(datos, r, col(DCOL_DESCRIPCION)))
             docu = ValorTexto(CeldaD(datos, r, col(DCOL_DOCUMENTO)))
-            debe = LeerImporte(CeldaD(datos, r, col(DCOL_DEBE)), "auto", ok)
+            debe = LeerImporte(CeldaD(datos, r, col(DCOL_DEBE)), sepDec, ok)
             If Not ok Then errores = errores & "; Debe no numérico [" & ValorTexto(CeldaD(datos, r, col(DCOL_DEBE))) & "]"
-            haber = LeerImporte(CeldaD(datos, r, col(DCOL_HABER)), "auto", ok)
+            haber = LeerImporte(CeldaD(datos, r, col(DCOL_HABER)), sepDec, ok)
             If Not ok Then errores = errores & "; Haber no numérico [" & ValorTexto(CeldaD(datos, r, col(DCOL_HABER))) & "]"
 
             If errores <> "" Then
@@ -197,10 +204,46 @@ Private Sub LeerLineasDiario(ByRef emp As TEmpresa, ByRef datos As Variant, ByRe
                 End If
                 If debe <> 0 Then AgregarLineaDiario r, fechaOk, fecha, asiento, cuentaNorm, nombre, descr, docu, "D", debe, ""
                 If haber <> 0 Then AgregarLineaDiario r, fechaOk, fecha, asiento, cuentaNorm, nombre, descr, docu, "H", haber, ""
+                If VarType(CeldaD(datos, r, col(DCOL_DOCUMENTO))) = vbDate Then
+                    IncAgregar fechaOk, fecha, asiento, r, INC_AVISO, _
+                        "El documento tiene formato de fecha en el origen (" & docu & ")", "Incluido - revisar que sea el nº correcto"
+                End If
             End If
         End If
     Next r
 End Sub
+
+' Decide el separador decimal de los importes en texto mirando todo el fichero:
+' si alguno acaba en coma + 1 o 2 cifras, es la coma; si acaba en punto + 1 o 2
+' cifras, el punto. Si no se puede saber, "auto" (se decide importe a importe).
+Private Function SeparadorDecimalDiario(ByRef datos As Variant, ByRef col() As Long, ByVal filaInicio As Long) As String
+    Dim r As Long, k As Long, c As Long, s As String, coma As Boolean, punto As Boolean, p As Long
+    For r = filaInicio To UBound(datos, 1)
+        For k = DCOL_DEBE To DCOL_HABER
+            c = col(k)
+            If c > 0 Then
+                If VarType(datos(r, c)) = vbString Then
+                    s = Replace(Trim$(datos(r, c)), " ", "")
+                    p = InStrRev(s, ",")
+                    If p > 0 And (Len(s) - p = 1 Or Len(s) - p = 2) Then
+                        If SoloDigitos(Mid$(s, p + 1)) Then coma = True
+                    End If
+                    p = InStrRev(s, ".")
+                    If p > 0 And (Len(s) - p = 1 Or Len(s) - p = 2) Then
+                        If SoloDigitos(Mid$(s, p + 1)) Then punto = True
+                    End If
+                End If
+            End If
+        Next k
+    Next r
+    If coma And Not punto Then
+        SeparadorDecimalDiario = ","
+    ElseIf punto And Not coma Then
+        SeparadorDecimalDiario = "."
+    Else
+        SeparadorDecimalDiario = "auto"
+    End If
+End Function
 
 Private Sub AgregarLineaDiario(ByVal fila As Long, ByVal fechaOk As Boolean, ByVal fecha As Date, ByVal asiento As String, _
         ByVal cuenta As String, ByVal nombre As String, ByVal descr As String, ByVal docu As String, _
@@ -303,11 +346,7 @@ Private Sub AgruparAsientos()
                 gAsi(idx).Primera = i
                 ' mismo número de asiento con otra fecha
                 If gLinDia(i).FechaOk And gLinDia(i).Asiento <> "" Then
-                    fechaPrimera = Empty
-                    On Error Resume Next
-                    fechaPrimera = fechas(UCase$(gLinDia(i).Asiento))
-                    On Error GoTo 0
-                    If IsEmpty(fechaPrimera) Then
+                    If Not LeerColeccion(fechas, UCase$(gLinDia(i).Asiento), fechaPrimera) Then
                         fechas.Add gLinDia(i).Fecha, UCase$(gLinDia(i).Asiento)
                     ElseIf CDate(fechaPrimera) <> gLinDia(i).Fecha Then
                         If Not ClaveExiste(avisadoFechas, UCase$(gLinDia(i).Asiento)) Then
@@ -365,7 +404,14 @@ Private Sub ProcesarAsiento(ByRef emp As TEmpresa, ByRef fil As TFiltros, ByVal 
         Exit Sub
     End If
 
-    ' 2) cuadre
+    ' 2) un asiento necesita al menos dos apuntes (a3 exige I ... U)
+    If gAsi(a).NLineas < 2 Then
+        ExcluirAsiento a, "Asiento de una sola línea (a3 exige al menos dos apuntes: I ... U)", _
+            "Excluido - corregir y volver a generar", res
+        Exit Sub
+    End If
+
+    ' 3) cuadre
     If sumD <> sumH Then
         If fil.ExcluirDescuadrados Then
             ExcluirAsiento a, "Asiento descuadrado: Debe " & ImporteTexto(sumD) & ", Haber " & ImporteTexto(sumH) & _
@@ -377,16 +423,12 @@ Private Sub ProcesarAsiento(ByRef emp As TEmpresa, ByRef fil As TFiltros, ByVal 
                 " (diferencia " & ImporteTexto(sumD - sumH) & ")", "Incluido - a3 lo avisará en el chequeo"
         End If
     End If
-    If gAsi(a).NLineas = 1 Then
-        IncAgregar gAsi(a).FechaOk, gAsi(a).Fecha, gAsi(a).Asiento, gLinDia(primera).Fila, INC_AVISO, _
-            "Asiento de una sola línea", "Incluido - verificar"
-    End If
     If gAsi(a).NoConsecutivo Then
         IncAgregar gAsi(a).FechaOk, gAsi(a).Fecha, gAsi(a).Asiento, gLinDia(primera).Fila, INC_INFO, _
             "Las líneas del asiento no estaban seguidas en el origen", "Se han juntado en un solo asiento"
     End If
 
-    ' 3) registros I / M / U
+    ' 4) registros I / M / U
     k = 0
     i = primera
     Do While i > 0

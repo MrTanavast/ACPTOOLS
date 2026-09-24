@@ -36,3 +36,19 @@ def esperado():
     asiento("20260106", [("572000001", "Banco", "Mismo asiento otra fecha", "", "D", 2.00),
                          ("570000000", "Caja", "Mismo asiento otra fecha", "", "H", 2.00)])
     return L
+
+
+def esperado2():
+    L = []
+    def asiento(fecha, lineas):
+        n = len(lineas)
+        for k, (cta, nom, desc, doc, dh, im) in enumerate(lineas):
+            imu = "I" if k == 0 else ("U" if k == n - 1 else "M")
+            L.append(reg0(EMP, fecha, cta, nom, dh, doc, imu, desc, im))
+    asiento("20260315", [("570000000", "Caja", "Cobro factura", "R1", "D", 1500.50),
+                         ("430000001", "Cliente", "Cobro factura", "R1", "H", 1500.50)])
+    asiento("20260316", [("600000000", "Compras", "Compra", "", "D", 1234.50),
+                         ("400000001", "Proveedor", "Compra", "", "H", 1234.50)])
+    asiento("20260318", [("572000001", "Banco", "Descuadre", "", "D", 10.00),
+                         ("570000000", "Caja", "Descuadre", "", "H", 9.99)])
+    return L

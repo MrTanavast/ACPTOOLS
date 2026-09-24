@@ -15,6 +15,9 @@ Private mHojas() As String
 Private mNHojas As Long
 Private mCargando As Boolean
 Private mUltimaRuta As String
+Private mEmpresaExiste As Boolean
+Private mModoAnterior As Integer
+Private mVentana As Object
 
 ' --- controles ------------------------------------------------------------
 Private txtEmpresa As MSForms.TextBox
@@ -73,6 +76,9 @@ Private Sub UserForm_Initialize()
     Dim i As Long, perfiles As Variant, modo As String, emp As String
     mCargando = True
     Set mEventos = New Collection
+    On Error Resume Next
+    Set mVentana = ActiveWindow
+    On Error GoTo 0
     Me.Caption = "Enlace contable a3  ·  ACP Asociados"
     Me.BackColor = COLOR_BLANCO
     Me.Width = 712
@@ -113,6 +119,33 @@ Private Sub UserForm_Initialize()
     mCargando = False
     ModoCambiado
     EmpresaCambiada
+    AjustarAPantalla
+End Sub
+
+' En pantallas pequeñas o con escala grande, reduce la ventana para que quepa
+Private Sub AjustarAPantalla()
+    Dim z As Double, alto As Double
+    On Error Resume Next
+    If Application.WindowState = -4137 Then                ' xlMaximized
+        alto = Application.UsableHeight + 40
+    Else
+        alto = Application.Height
+    End If
+    If alto > 200 And Me.Height > alto - 10 Then
+        z = (alto - 10) / Me.Height
+        Me.Zoom = Int(z * 100)
+        Me.Width = Me.Width * z
+        Me.Height = Me.Height * z
+    End If
+    On Error GoTo 0
+End Sub
+
+' Vuelve a poner la ventana delante (al abrir libros, Excel puede taparla)
+Private Sub TraerAlFrente()
+    On Error Resume Next
+    If Not mVentana Is Nothing Then mVentana.Activate
+    AppActivate Me.Caption
+    On Error GoTo 0
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
@@ -190,7 +223,8 @@ Private Sub ConstruirControles()
     Seccion "sec2", "2 · DATOS DE ORIGEN", COL_IZQ_ETQ, 190, 330
     Set optHoja = Opcion("optHoja", "Hoja abierta", "origen", COL_IZQ_ETQ, 210, 90)
     Set cmbHoja = Lista("cmbHoja", COL_IZQ_CTL, 209, 236)
-    cmbHoja.ControlTipText = "Libros y hojas abiertos en Excel"
+    cmbHoja.ControlTipText = "Hojas de los libros abiertos en Excel (hoja · libro)"
+    cmbHoja.ListWidth = 460
     Set optArchivo = Opcion("optArchivo", "Archivo CSV", "origen", COL_IZQ_ETQ, 234, 90)
     Set txtArchivo = Texto("txtArchivo", COL_IZQ_CTL, 233, 166)
     txtArchivo.ControlTipText = "Ruta del fichero CSV"
@@ -229,7 +263,7 @@ Private Sub ConstruirControles()
 
     Set lblSeriesIncl = Etiqueta("lblSeriesIncl", "Solo las series", COL_DER_ETQ, 150, 96)
     Set txtSeriesIncl = Texto("txtSeriesIncl", COL_DER_CTL, 147, 182)
-    txtSeriesIncl.ControlTipText = "Series separadas por ; (p.ej. INV;REC). Vacío = todas"
+    txtSeriesIncl.ControlTipText = "Series separadas por ; (p.ej. F;R o INV;REC). Vacío = todas"
     Set lblSeriesExcl = Etiqueta("lblSeriesExcl", "Excluir series", COL_DER_ETQ, 174, 96)
     Set txtSeriesExcl = Texto("txtSeriesExcl", COL_DER_CTL, 171, 182)
     txtSeriesExcl.ControlTipText = "Series que NO se exportan, separadas por ;"
@@ -246,11 +280,11 @@ Private Sub ConstruirControles()
     lblAyudaFiltros.WordWrap = True
 
     ' --- resultado y botones ----------------------------------------------
-    Set c = Etiqueta("lblResultado", "RESULTADO", COL_IZQ_ETQ, 318, 120)
+    Set c = Etiqueta("lblResultado", "RESULTADO", COL_IZQ_ETQ, 330, 120)
     c.Font.Bold = True
     c.ForeColor = COLOR_ACP
-    Set txtResultado = Texto("txtResultado", COL_IZQ_ETQ, 334, ancho - 28)
-    txtResultado.Height = 110
+    Set txtResultado = Texto("txtResultado", COL_IZQ_ETQ, 346, ancho - 28)
+    txtResultado.Height = 98
     txtResultado.MultiLine = True
     txtResultado.WordWrap = True
     txtResultado.ScrollBars = 2
@@ -396,7 +430,8 @@ Public Sub ControlEvento(ByVal nombre As String)
             EmpresaCambiada
         Case "optDiario", "optEmitidas"
             ModoCambiado
-            EmpresaCambiada
+            btnConfigurar.Visible = (ModoActual() = MODO_EMITIDAS) And Not mEmpresaExiste And _
+                                    SoloDigitos(Trim$(txtEmpresa.Text))
         Case "cmbPeriodo", "txtAnio"
             PeriodoCambiado
         Case "txtDesde", "txtHasta"
@@ -448,6 +483,14 @@ End Function
 Private Sub ModoCambiado()
     Dim fact As Boolean
     fact = (ModoActual() = MODO_EMITIDAS)
+    ' el rango de documentos / asientos cambia de significado: se vacía
+    If mModoAnterior <> 0 And mModoAnterior <> ModoActual() Then
+        mCargando = True
+        txtRefDesde.Text = ""
+        txtRefHasta.Text = ""
+        mCargando = False
+    End If
+    mModoAnterior = ModoActual()
     lblPerfil.Visible = fact
     cmbPerfil.Visible = fact
     lblSeriesIncl.Visible = fact
@@ -478,30 +521,33 @@ Private Sub EmpresaCambiada()
     Dim emp As TEmpresa, cod As String, i As Long
     cod = Trim$(txtEmpresa.Text)
     btnConfigurar.Visible = False
+    mEmpresaExiste = False
     If cod = "" Then
         lblEmpresaNombre.Caption = ""
-        Exit Sub
-    End If
-    If Not SoloDigitos(cod) Then
+    ElseIf Not SoloDigitos(cod) Then
         lblEmpresaNombre.Caption = "Solo números"
         lblEmpresaNombre.ForeColor = COLOR_ERROR
-        Exit Sub
-    End If
-    If CargarEmpresa(cod, emp) Then
-        lblEmpresaNombre.Caption = IIf(emp.Nombre <> "", emp.Nombre, "(sin nombre)")
-        lblEmpresaNombre.ForeColor = COLOR_OK
+    Else
+        mEmpresaExiste = CargarEmpresa(cod, emp)
         mCargando = True
-        If emp.Digitos >= 6 And emp.Digitos <= 12 Then cmbDigitos.Value = CStr(emp.Digitos)
+        If mEmpresaExiste Then
+            lblEmpresaNombre.Caption = IIf(emp.Nombre <> "", emp.Nombre, "(sin nombre)")
+            lblEmpresaNombre.ForeColor = COLOR_OK
+            If emp.Digitos >= 6 And emp.Digitos <= 12 Then cmbDigitos.Value = CStr(emp.Digitos)
+        Else
+            lblEmpresaNombre.Caption = "Empresa " & CodigoEmpresaA3(cod) & " no configurada"
+            lblEmpresaNombre.ForeColor = COLOR_AVISO
+            btnConfigurar.Visible = (ModoActual() = MODO_EMITIDAS)
+        End If
+        ' perfil y carpeta SIEMPRE de la empresa escrita (nunca los de la anterior)
         For i = 0 To cmbPerfil.ListCount - 1
             If UCase$(cmbPerfil.List(i)) = UCase$(emp.Perfil) Then cmbPerfil.ListIndex = i
         Next i
-        If emp.CarpetaSalida <> "" Then txtCarpeta.Text = emp.CarpetaSalida
+        txtCarpeta.Text = emp.CarpetaSalida
         mCargando = False
-    Else
-        lblEmpresaNombre.Caption = "Empresa " & CodigoEmpresaA3(cod) & " no configurada"
-        lblEmpresaNombre.ForeColor = COLOR_AVISO
-        btnConfigurar.Visible = (ModoActual() = MODO_EMITIDAS)
+        If emp.CarpetaSalida = "" Then CarpetaPorDefecto
     End If
+    lblEmpresaNombre.ControlTipText = lblEmpresaNombre.Caption
 End Sub
 
 Private Sub PeriodoCambiado()
@@ -531,7 +577,7 @@ End Sub
 
 ' Lista "[libro] hoja" de todos los libros abiertos visibles
 Private Sub LlenarHojas()
-    Dim wb As Object, ws As Object, visible As Boolean, seleccion As Long, actual As String
+    Dim wb As Object, ws As Object, visible As Boolean, seleccion As Long, actual As String, libro As String, activa As String, i As Long
     mNHojas = 0
     ReDim mLibros(1 To 16)
     ReDim mHojas(1 To 16)
@@ -555,17 +601,33 @@ Private Sub LlenarHojas()
                     End If
                     mLibros(mNHojas) = wb.Name
                     mHojas(mNHojas) = ws.Name
-                    cmbHoja.AddItem "[" & wb.Name & "]  " & ws.Name
+                    cmbHoja.AddItem ws.Name & "   ·   " & wb.Name
                     If wb.Name & "|" & ws.Name = actual Then seleccion = mNHojas
                 End If
             Next ws
         End If
     Next wb
-    If seleccion > 0 Then
-        cmbHoja.ListIndex = seleccion - 1
-    ElseIf cmbHoja.ListCount > 0 Then
-        cmbHoja.ListIndex = 0
+    ' Si la hoja activa es de la herramienta, se propone la hoja activa del último
+    ' libro de datos abierto (nunca las plantillas de ejemplo de la herramienta)
+    If seleccion = 0 Then
+        For i = mNHojas To 1 Step -1
+            If mLibros(i) <> ThisWorkbook.Name Then
+                libro = mLibros(i)
+                Exit For
+            End If
+        Next i
+        If libro <> "" Then
+            On Error Resume Next
+            activa = Application.Workbooks(libro).ActiveSheet.Name
+            On Error GoTo 0
+            For i = 1 To mNHojas
+                If mLibros(i) = libro Then
+                    If seleccion = 0 Or mHojas(i) = activa Then seleccion = i
+                End If
+            Next i
+        End If
     End If
+    If seleccion > 0 Then cmbHoja.ListIndex = seleccion - 1
     mCargando = False
 End Sub
 
@@ -601,8 +663,22 @@ Private Sub ElegirArchivo()
         On Error Resume Next
         Set wb = Application.Workbooks(nombre)
         On Error GoTo 0
-        If wb Is Nothing Then
+        If Not wb Is Nothing Then
+            If StrComp(wb.FullName, CStr(ruta), vbTextCompare) <> 0 Then
+                If LCase$(Left$(wb.FullName, 4)) = "http" Then
+                    ' OneDrive / SharePoint: la ruta es una URL y no se puede comparar
+                    If MsgBox("Ya está abierto un libro llamado """ & nombre & """:" & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
+                              "¿Es el mismo archivo?", vbQuestion + vbYesNo, "Enlace contable a3") = vbNo Then Exit Sub
+                Else
+                    MsgBox "Ya hay abierto OTRO libro llamado """ & nombre & """:" & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
+                           "Excel no puede abrir dos libros con el mismo nombre. Ciérralo y vuelve a elegir el archivo.", _
+                           vbExclamation, "Enlace contable a3"
+                    Exit Sub
+                End If
+            End If
+        Else
             Set wb = Application.Workbooks.Open(Filename:=CStr(ruta), UpdateLinks:=0, ReadOnly:=True)
+            TraerAlFrente
         End If
         LlenarHojas
         SeleccionarHoja wb.Name, wb.ActiveSheet.Name
@@ -619,6 +695,10 @@ End Sub
 Private Sub CarpetaPorDefecto()
     Dim i As Long, wb As Object
     If Trim$(txtCarpeta.Text) <> "" Then Exit Sub
+    If optArchivo.Value And Trim$(txtArchivo.Text) <> "" Then
+        txtCarpeta.Text = CarpetaDeRuta(Trim$(txtArchivo.Text))
+        Exit Sub
+    End If
     i = cmbHoja.ListIndex + 1
     If i < 1 Or i > mNHojas Then Exit Sub
     On Error Resume Next
@@ -741,6 +821,7 @@ Private Sub Ejecutar(ByVal soloAnalizar As Boolean)
     txtResultado.ForeColor = COLOR_TEXTO
     DoEvents
     ok = EjecutarEnlace(p, fil, soloAnalizar, informe, rutaDat)
+    If Not soloAnalizar Then TraerAlFrente
     txtResultado.Text = informe
     txtResultado.SelStart = 0
     If Not ok Then

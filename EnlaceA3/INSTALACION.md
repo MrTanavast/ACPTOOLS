@@ -56,11 +56,11 @@ Todo va en **un único libro de Excel con macros (.xlsm)**, la "herramienta". **
    - **Código de empresa** de A3. Si la empresa está en EMPRESAS, se rellenan solos el nombre, los dígitos, el perfil y la última carpeta.
    - **Tipo de enlace**: *Diario* o *Facturas emitidas*.
    - **Dígitos del plan** de cuentas. Por ejemplo, 570000000 son 9 dígitos.
-   - **Origen**: una hoja de cualquier libro abierto, o un archivo CSV.
+   - **Origen**: una hoja de cualquier libro abierto, o un archivo CSV. Por defecto se propone la hoja activa del último libro de datos que abriste, nunca las plantillas de la herramienta.
    - **Filtros**:
      - periodo rápido (mes, trimestre o año) o fechas libres;
      - rango de documentos (INV1510 a INV1704) o de asientos;
-     - series que se incluyen o se excluyen (INV;REC);
+     - series que se incluyen o se excluyen (`F;R` o `INV;REC`);
      - tipos de documento (facturas, tickets, abonos);
      - en diarios, excluir los asientos descuadrados.
    - **Salida**: la carpeta donde se guarda `SUENLACE.DAT`. Se recuerda por empresa. Puedes usar tu truco de `V:\A3DIARIOS\01692`.
@@ -90,21 +90,29 @@ Si ya había un `SUENLACE.DAT` en la carpeta, se renombra a `SUENLACE_anterior_<
   - descuadre (esta comprobación se puede desactivar).
 - Las cuentas admiten la notación de punto de A3: `572.1` pasa a `572000001`.
 
-**Facturas emitidas** (el mismo procedimiento que usaba tu compañera)
+**Facturas emitidas** (el mismo procedimiento que usaba tu compañera, ampliado)
 
-- Las líneas se agrupan por **nº de factura + fecha**. Así, una numeración que se reinicia (REC2) no se mezcla.
+- Las líneas se agrupan por **nº de factura + fecha**. Así, una numeración que se reinicia (REC2) no se mezcla. Una factura anulada y otra emitida con el mismo número el mismo día tampoco se mezclan: se exporta la buena, con aviso.
 - Se excluyen, y quedan listados:
   - los documentos **anulados**;
   - los de **importe 0**;
-  - los que tienen importes no numéricos;
+  - los que tienen importes no numéricos o celdas con error (#N/D);
   - los de **tipos de IVA sin cuenta** configurada (por ejemplo, 100 %);
   - las cuentas con un número de dígitos incorrecto;
   - los **descuadres** entre el total y base + cuotas, porque A3 los rechazaría.
 - Las líneas con base y cuota a 0 se quitan de la factura.
-- **Abonos**: registro tipo 2 con importes en positivo. Si un abono llega en positivo en el origen, se avisa.
+- **Abonos** (Abono / Credit Note): registro tipo 2 con importes en positivo. Siempre restan ventas. Si un abono llega en positivo en el origen, se avisa.
+- **Rectificativas** (solo en el perfil GENERAL): registro tipo 2 con el signo del origen. Si en el origen son negativas, disminuyen la factura original; si son positivas, la aumentan (A3 las recibe en negativo) y se avisa.
 - Los tickets se tratan como facturas.
 - El detalle lleva una línea por **cuenta de ventas + tipo de IVA**.
-- El NIF, el nombre y el código postal solo se informan si hay NIF, que es lo que se usa para el modelo 347.
+- Impreso: 01 (347). Las entregas intracomunitarias (subtipos 03 y 04) llevan 02 (349). También se puede indicar en una columna "Impreso".
+- **Nº de factura**: A3 guarda 10 caracteres. Si el número es más largo, se quitan los separadores y se conserva el final (`F2026/000123` pasa a `2026000123`). Si dos facturas quedaran con el mismo número, se excluye la segunda.
+- **NIF**:
+  - se normaliza (sin guiones ni espacios, sin el prefijo ES);
+  - si no es un NIF español válido, se avisa;
+  - el nombre y el CP solo se informan si hay NIF. Si el CP no es de 5 cifras, se deja en blanco y se avisa.
+- **Retención**: si viene con el signo cambiado, se corrige y se avisa. Si viene sin porcentaje, se calcula (1, 2, 7, 15, 19 o 24 %).
+- **Porcentajes**: se aceptan celdas con formato % (21 % o 0,21).
 - Todos los textos van en ASCII: sin tildes ni eñes.
 
 ## 5. Otras empresas (perfil GENERAL)
@@ -113,7 +121,7 @@ Si ya había un `SUENLACE.DAT` en la carpeta, se renombra a `SUENLACE_anterior_<
 2. Adapta el libro de facturas del cliente a la **plantilla de facturas**, una fila por factura y tipo de IVA:
    - Botón *Nueva plantilla de FACTURAS* en INICIO.
    - Obligatorias: Fecha, Nº Factura, Base imponible, % IVA y Cuota IVA.
-   - Opcionales: tipo (Factura/Ticket/Abono), cliente, NIF, CP, total, cuenta de cliente o de ventas por línea, recargo, retención, subtipo y anulada.
+   - Opcionales: tipo (Factura/Ticket/Abono/Rectificativa), cliente, NIF, CP, total, cuenta de cliente o de ventas por línea, recargo, retención, subtipo, impreso y anulada.
 3. Si otro cliente envía siempre el mismo formato de exportación, no hace falta adaptarlo a mano. Añade una **columna nueva en PERFILES**:
    - escribe, para cada campo, el nombre de la columna de su fichero;
    - puedes poner alternativas separadas con `|`;

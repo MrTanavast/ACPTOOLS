@@ -54,9 +54,15 @@ Public Function CrearControl(ByRef p As TParametros, ByRef emp As TEmpresa, ByRe
     Set CrearControl = wb
     Exit Function
 Fallo:
+    Dim numErr As Long, descErr As String
+    numErr = Err.Number
+    descErr = Err.Description
+    On Error Resume Next
+    If Not wb Is Nothing Then wb.Close False
+    On Error GoTo 0
     Application.DisplayAlerts = alertas
     Application.ScreenUpdating = pantalla
-    Err.Raise Err.Number, "CrearControl", Err.Description
+    Err.Raise numErr, "CrearControl", descErr
 End Function
 
 Private Function NuevaHojaControl(ByVal wb As Object, ByVal nombre As String) As Object
@@ -85,10 +91,10 @@ Private Sub Cabecera(ByVal ws As Object, ByVal fila As Long, ByVal titulos As Va
     ws.Rows(fila).RowHeight = 30
 End Sub
 
-Private Sub Anchos(ByVal ws As Object, ByVal anchos As Variant)
+Private Sub Anchos(ByVal ws As Object, ByVal lista As Variant)
     Dim i As Long
-    For i = 0 To UBound(anchos)
-        ws.Columns(i + 1).ColumnWidth = anchos(i)
+    For i = 0 To UBound(lista)
+        ws.Columns(i + 1).ColumnWidth = lista(i)
     Next i
 End Sub
 
@@ -146,7 +152,8 @@ Private Sub HojaResumen(ByVal ws As Object, ByRef p As TParametros, ByRef emp As
 
     f = 4
     f = Bloque(ws, f, "DATOS DE LA GENERACIÓN")
-    f = Dato(ws, f, "Generado el", FechaTexto(Date) & "  " & Format$(Time, "hh:mm"))
+    f = Dato(ws, f, "Generado el", Now)
+    ws.Cells(f - 1, 2).NumberFormat = "dd/mm/yyyy hh:mm"
     f = Dato(ws, f, "Usuario", Application.UserName)
     f = Dato(ws, f, "Origen de los datos", p.OrigenDescripcion)
     f = Dato(ws, f, "Fichero generado", rutaDat)
@@ -258,7 +265,12 @@ End Function
 
 Private Function Dato(ByVal ws As Object, ByVal f As Long, ByVal etiqueta As String, ByVal valor As Variant) As Long
     ws.Cells(f, 1).Value = etiqueta
-    If VarType(valor) = vbString Then ws.Cells(f, 2).Value = TxtCelda(CStr(valor)) Else ws.Cells(f, 2).Value = valor
+    If VarType(valor) = vbString Then
+        ws.Cells(f, 2).NumberFormat = "@"
+        ws.Cells(f, 2).Value = CStr(valor)
+    Else
+        ws.Cells(f, 2).Value = valor
+    End If
     ws.Cells(f, 2).HorizontalAlignment = XL_IZQUIERDA
     Dato = f + 1
 End Function
@@ -281,48 +293,45 @@ End Function
 Private Function ResumenPorCuentaFacturas(ByVal ws As Object, ByVal f As Long) As Long
     Dim claves() As String, ctas() As String, pcts() As Currency, ivas() As String
     Dim b() As Currency, c() As Currency, t() As Currency, n As Long, i As Long, k As Long, clave As String
-    Dim orden() As Long, j As Long, x As Long, ini As Long
+    Dim orden() As Long, j As Long, x As Long, ini As Long, indice As New Collection, v As Variant, m() As Variant
     f = Bloque(ws, f, "RESUMEN POR CUENTA DE VENTAS Y TIPO DE IVA")
     Cabecera ws, f, Array("Cuenta de ventas", "% IVA", "Cuenta IVA", "Base", "Cuota IVA", "Total")
     f = f + 1
-    If gNCtrlFac = 0 Then ResumenPorCuentaFacturas = f + 1: Exit Function
+    If gNCtrlFac = 0 Then
+        ResumenPorCuentaFacturas = f + 1
+        Exit Function
+    End If
     ReDim claves(1 To gNCtrlFac): ReDim ctas(1 To gNCtrlFac): ReDim pcts(1 To gNCtrlFac): ReDim ivas(1 To gNCtrlFac)
     ReDim b(1 To gNCtrlFac): ReDim c(1 To gNCtrlFac): ReDim t(1 To gNCtrlFac)
     For i = 1 To gNCtrlFac
         clave = gCtrlFac(i).CtaVentas & "|" & PorcentajeA3(gCtrlFac(i).PctIVA) & "|" & gCtrlFac(i).CtaIVA
-        k = 0
-        For j = 1 To n
-            If claves(j) = clave Then k = j: Exit For
-        Next j
-        If k = 0 Then
+        If LeerColeccion(indice, clave, v) Then
+            k = CLng(v)
+        Else
             n = n + 1: k = n
+            indice.Add k, clave
             claves(k) = clave: ctas(k) = gCtrlFac(i).CtaVentas: pcts(k) = gCtrlFac(i).PctIVA: ivas(k) = gCtrlFac(i).CtaIVA
         End If
         b(k) = b(k) + gCtrlFac(i).BaseImp
         c(k) = c(k) + gCtrlFac(i).Cuota
         t(k) = t(k) + gCtrlFac(i).Total
     Next i
-    ReDim orden(1 To n)
-    For i = 1 To n: orden(i) = i: Next i
-    For i = 2 To n
-        x = orden(i): j = i - 1
-        Do While j >= 1
-            If claves(orden(j)) <= claves(x) Then Exit Do
-            orden(j + 1) = orden(j): j = j - 1
-        Loop
-        orden(j + 1) = x
-    Next i
-    ini = f
+    OrdenarIndices claves, n, orden
+    ReDim m(1 To n, 1 To 6)
     For i = 1 To n
         k = orden(i)
-        ws.Cells(f, 1).Value = TxtCelda(ctas(k))
-        ws.Cells(f, 2).Value = CDbl(pcts(k))
-        ws.Cells(f, 3).Value = TxtCelda(ivas(k))
-        ws.Cells(f, 4).Value = CDbl(b(k))
-        ws.Cells(f, 5).Value = CDbl(c(k))
-        ws.Cells(f, 6).Value = CDbl(t(k))
-        f = f + 1
+        m(i, 1) = ctas(k)
+        m(i, 2) = CDbl(pcts(k))
+        m(i, 3) = ivas(k)
+        m(i, 4) = CDbl(b(k))
+        m(i, 5) = CDbl(c(k))
+        m(i, 6) = CDbl(t(k))
     Next i
+    ini = f
+    ws.Range(ws.Cells(ini, 1), ws.Cells(ini + n - 1, 1)).NumberFormat = "@"
+    ws.Range(ws.Cells(ini, 3), ws.Cells(ini + n - 1, 3)).NumberFormat = "@"
+    ws.Range(ws.Cells(ini, 1), ws.Cells(ini + n - 1, 6)).Value = m
+    f = ini + n
     ws.Range(ws.Cells(ini, 4), ws.Cells(f, 6)).NumberFormat = "#,##0.00"
     ws.Range(ws.Cells(ini, 2), ws.Cells(f, 2)).NumberFormat = "0.00"
     ws.Cells(f, 1).Value = "TOTAL"
@@ -338,45 +347,41 @@ End Function
 
 ' Resumen por cuenta (diario)
 Private Function ResumenPorCuentaDiario(ByVal ws As Object, ByVal f As Long) As Long
-    Dim ctas() As String, noms() As String, d() As Currency, h() As Currency, n As Long, i As Long, j As Long, k As Long
-    Dim orden() As Long, x As Long, ini As Long
+    Dim ctas() As String, noms() As String, d() As Currency, h() As Currency, n As Long, i As Long, k As Long
+    Dim orden() As Long, ini As Long, indice As New Collection, v As Variant, m() As Variant
     f = Bloque(ws, f, "RESUMEN POR CUENTA")
     Cabecera ws, f, Array("Cuenta", "Nombre", "Debe", "Haber", "Saldo")
     f = f + 1
-    If gNCtrlDia = 0 Then ResumenPorCuentaDiario = f + 1: Exit Function
+    If gNCtrlDia = 0 Then
+        ResumenPorCuentaDiario = f + 1
+        Exit Function
+    End If
     ReDim ctas(1 To gNCtrlDia): ReDim noms(1 To gNCtrlDia): ReDim d(1 To gNCtrlDia): ReDim h(1 To gNCtrlDia)
     For i = 1 To gNCtrlDia
-        k = 0
-        For j = 1 To n
-            If ctas(j) = gCtrlDia(i).Cuenta Then k = j: Exit For
-        Next j
-        If k = 0 Then
+        If LeerColeccion(indice, gCtrlDia(i).Cuenta, v) Then
+            k = CLng(v)
+        Else
             n = n + 1: k = n
+            indice.Add k, gCtrlDia(i).Cuenta
             ctas(k) = gCtrlDia(i).Cuenta: noms(k) = gCtrlDia(i).NombreCuenta
         End If
         d(k) = d(k) + gCtrlDia(i).Debe
         h(k) = h(k) + gCtrlDia(i).Haber
     Next i
-    ReDim orden(1 To n)
-    For i = 1 To n: orden(i) = i: Next i
-    For i = 2 To n
-        x = orden(i): j = i - 1
-        Do While j >= 1
-            If ctas(orden(j)) <= ctas(x) Then Exit Do
-            orden(j + 1) = orden(j): j = j - 1
-        Loop
-        orden(j + 1) = x
-    Next i
-    ini = f
+    OrdenarIndices ctas, n, orden
+    ReDim m(1 To n, 1 To 5)
     For i = 1 To n
         k = orden(i)
-        ws.Cells(f, 1).Value = TxtCelda(ctas(k))
-        ws.Cells(f, 2).Value = TxtCelda(noms(k))
-        ws.Cells(f, 3).Value = CDbl(d(k))
-        ws.Cells(f, 4).Value = CDbl(h(k))
-        ws.Cells(f, 5).Value = CDbl(d(k) - h(k))
-        f = f + 1
+        m(i, 1) = ctas(k)
+        m(i, 2) = noms(k)
+        m(i, 3) = CDbl(d(k))
+        m(i, 4) = CDbl(h(k))
+        m(i, 5) = CDbl(d(k) - h(k))
     Next i
+    ini = f
+    ws.Range(ws.Cells(ini, 1), ws.Cells(ini + n - 1, 2)).NumberFormat = "@"
+    ws.Range(ws.Cells(ini, 1), ws.Cells(ini + n - 1, 5)).Value = m
+    f = ini + n
     ws.Range(ws.Cells(ini, 3), ws.Cells(f, 5)).NumberFormat = "#,##0.00"
     ws.Cells(f, 1).Value = "TOTAL"
     ws.Cells(f, 3).Formula = "=SUM(" & ws.Range(ws.Cells(ini, 3), ws.Cells(f - 1, 3)).Address(False, False) & ")"
@@ -388,6 +393,25 @@ Private Function ResumenPorCuentaDiario(ByVal ws As Object, ByVal f As Long) As 
     End With
     ResumenPorCuentaDiario = f + 2
 End Function
+
+' Ordena los índices 1..n por el texto de "claves" (inserción; n pequeño)
+Private Sub OrdenarIndices(ByRef claves() As String, ByVal n As Long, ByRef orden() As Long)
+    Dim i As Long, j As Long, x As Long
+    ReDim orden(1 To n)
+    For i = 1 To n
+        orden(i) = i
+    Next i
+    For i = 2 To n
+        x = orden(i)
+        j = i - 1
+        Do While j >= 1
+            If claves(orden(j)) <= claves(x) Then Exit Do
+            orden(j + 1) = orden(j)
+            j = j - 1
+        Loop
+        orden(j + 1) = x
+    Next i
+End Sub
 
 ' =====================================================================
 '  HOJAS DE DETALLE
@@ -443,7 +467,8 @@ Private Sub HojaDetalleDiario(ByVal ws As Object)
             m(i, 8) = CDbl(gCtrlDia(i).Debe)
             m(i, 9) = CDbl(gCtrlDia(i).Haber)
         Next i
-        ws.Range(ws.Cells(2, 4), ws.Cells(gNCtrlDia + 1, 4)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 2), ws.Cells(gNCtrlDia + 1, 2)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 4), ws.Cells(gNCtrlDia + 1, 7)).NumberFormat = "@"
         ws.Range(ws.Cells(2, 1), ws.Cells(gNCtrlDia + 1, 9)).Value = m
         ws.Range(ws.Cells(2, 8), ws.Cells(gNCtrlDia + 1, 9)).NumberFormat = "#,##0.00"
     End If
@@ -453,7 +478,7 @@ Private Sub HojaDetalleDiario(ByVal ws As Object)
 End Sub
 
 Private Sub HojaIncidencias(ByVal ws As Object)
-    Dim m() As Variant, i As Long, color As Long
+    Dim m() As Variant, i As Long
     Cabecera ws, 1, Array("Gravedad", "Fecha", "Documento / asiento", "Fila origen", "Incidencia", "Tratamiento")
     Anchos ws, Array(11, 11, 18, 10, 90, 40)
     If gNInc > 0 Then
@@ -467,15 +492,16 @@ Private Sub HojaIncidencias(ByVal ws As Object)
             m(i, 6) = TxtCelda(gInc(i).Tratamiento)
         Next i
         ws.Range(ws.Cells(2, 3), ws.Cells(gNInc + 1, 3)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 5), ws.Cells(gNInc + 1, 6)).NumberFormat = "@"
         ws.Range(ws.Cells(2, 1), ws.Cells(gNInc + 1, 6)).Value = m
-        For i = 1 To gNInc
-            Select Case gInc(i).Gravedad
-                Case INC_EXCLUIDO: color = COLOR_ERROR_CLARO
-                Case INC_AVISO: color = COLOR_AVISO_CLARO
-                Case Else: color = COLOR_ACP_CLARO
-            End Select
-            ws.Range(ws.Cells(i + 1, 1), ws.Cells(i + 1, 6)).Interior.Color = color
-        Next i
+        ' las referencias relativas del formato condicional se toman desde la celda activa
+        ws.Activate
+        ws.Cells(2, 1).Select
+        With ws.Range(ws.Cells(2, 1), ws.Cells(gNInc + 1, 6))
+            .Interior.Color = COLOR_ACP_CLARO
+            .FormatConditions.Add(Type:=2, Formula1:="=$A2=""" & INC_EXCLUIDO & """").Interior.Color = COLOR_ERROR_CLARO
+            .FormatConditions.Add(Type:=2, Formula1:="=$A2=""" & INC_AVISO & """").Interior.Color = COLOR_AVISO_CLARO
+        End With
         ws.Range(ws.Cells(2, 5), ws.Cells(gNInc + 1, 5)).WrapText = True
     Else
         ws.Cells(2, 1).Value = "Sin incidencias"
@@ -511,6 +537,7 @@ Private Sub HojaOrigenFacturas(ByVal ws As Object)
         Next i
         ws.Range(ws.Cells(2, 3), ws.Cells(gNLinFac + 1, 6)).NumberFormat = "@"
         ws.Range(ws.Cells(2, 11), ws.Cells(gNLinFac + 1, 12)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 14), ws.Cells(gNLinFac + 1, 14)).NumberFormat = "@"
         ws.Range(ws.Cells(2, 1), ws.Cells(gNLinFac + 1, 14)).Value = m
         ws.Range(ws.Cells(2, 7), ws.Cells(gNLinFac + 1, 10)).NumberFormat = "#,##0.00"
         ws.Range(ws.Cells(2, 8), ws.Cells(gNLinFac + 1, 8)).NumberFormat = "0.00"
@@ -541,7 +568,8 @@ Private Sub HojaOrigenDiario(ByVal ws As Object)
             m(i, 10) = IIf(gLinDia(i).Estado = "", "Sin procesar", gLinDia(i).Estado)
             m(i, 11) = TxtCelda(gLinDia(i).ErrorTxt)
         Next i
-        ws.Range(ws.Cells(2, 3), ws.Cells(gNLinDia + 1, 4)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 3), ws.Cells(gNLinDia + 1, 7)).NumberFormat = "@"
+        ws.Range(ws.Cells(2, 11), ws.Cells(gNLinDia + 1, 11)).NumberFormat = "@"
         ws.Range(ws.Cells(2, 1), ws.Cells(gNLinDia + 1, 11)).Value = m
         ws.Range(ws.Cells(2, 9), ws.Cells(gNLinDia + 1, 9)).NumberFormat = "#,##0.00"
         ColorearEstados ws, 10, gNLinDia + 1
@@ -551,18 +579,14 @@ Private Sub HojaOrigenDiario(ByVal ws As Object)
 End Sub
 
 Private Sub ColorearEstados(ByVal ws As Object, ByVal col As Long, ByVal ultima As Long)
-    Dim i As Long, v As String
-    For i = 2 To ultima
-        v = CStr(ws.Cells(i, col).Value)
-        If v = "Exportada" Then
-            ws.Cells(i, col).Font.Color = COLOR_OK
-        ElseIf v = "Excluida" Then
-            ws.Cells(i, col).Font.Color = COLOR_ERROR
-            ws.Cells(i, col).Font.Bold = True
-        ElseIf v <> "" Then
-            ws.Cells(i, col).Font.Color = COLOR_GRIS
-        End If
-    Next i
+    Dim rng As Object, fc As Object
+    Set rng = ws.Range(ws.Cells(2, col), ws.Cells(ultima, col))
+    rng.Font.Color = COLOR_GRIS
+    Set fc = rng.FormatConditions.Add(Type:=1, Operator:=3, Formula1:="=""Exportada""")     ' xlCellValue, xlEqual
+    fc.Font.Color = COLOR_OK
+    Set fc = rng.FormatConditions.Add(Type:=1, Operator:=3, Formula1:="=""Excluida""")
+    fc.Font.Color = COLOR_ERROR
+    fc.Font.Bold = True
 End Sub
 
 Private Sub HojaFichero(ByVal ws As Object)

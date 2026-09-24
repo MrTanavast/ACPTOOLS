@@ -82,6 +82,7 @@ Public Type TPerfil
     FormatoFecha As String      ' "DMA" (dd/mm/aaaa), "MDA" o "AMD"
     ValoresAbono As String      ' valores de la columna TIPO que indican abono (separados por ;)
     ValoresTicket As String     ' valores de la columna TIPO que indican ticket
+    ValoresRectificativa As String ' rectificativas: tipo 2 que toma el signo del origen
     NombreVacio As String       ' nombre de cliente si viene vacío
     AbonoSiNegativo As Boolean  ' sin columna TIPO: total negativo = abono
     FilaCabecera As Long
@@ -516,12 +517,40 @@ Public Function LeerImporte(ByVal v As Variant, ByVal sepDecimal As String, ByRe
             LeerImporte = 0
         Case vbString
             d = ParseNumero(CStr(v), sepDecimal, ok)
-            If ok Then LeerImporte = Redondear2(d)
+            If ok Then
+                If Abs(d) >= 10000000000# Then
+                    ok = False                         ' a3 admite como máximo 10 enteros
+                Else
+                    LeerImporte = Redondear2(d)
+                End If
+            End If
         Case vbInteger, vbLong, vbByte, vbDouble, vbSingle, vbCurrency, vbDecimal
-            LeerImporte = Redondear2(CDbl(v))
+            d = CDbl(v)
+            If Abs(d) >= 10000000000# Then
+                ok = False
+            Else
+                LeerImporte = Redondear2(d)
+            End If
         Case Else
             ok = False
     End Select
+End Function
+
+' Lee un porcentaje. Si la celda es numérica y está entre 0 y "limite" se
+' entiende que tiene formato % de Excel (0,21 = 21 %) y se multiplica por 100
+' ANTES de redondear (0,052 -> 5,20).
+Public Function LeerPorcentaje(ByVal v As Variant, ByVal sepDecimal As String, ByVal limite As Double, ByRef ok As Boolean) As Currency
+    Dim d As Double
+    Select Case VarType(v)
+        Case vbInteger, vbLong, vbByte, vbDouble, vbSingle, vbCurrency, vbDecimal
+            d = CDbl(v)
+            If d > 0 And d < limite Then
+                ok = True
+                LeerPorcentaje = Redondear2(d * 100)
+                Exit Function
+            End If
+    End Select
+    LeerPorcentaje = LeerImporte(v, sepDecimal, ok)
 End Function
 
 ' =====================================================================
@@ -576,7 +605,7 @@ Public Function ParseFechaTexto(ByVal s As String, ByVal formato As String, ByRe
     i = InStr(s, " ")
     If i > 0 Then s = Left$(s, i - 1)
     ' sólo dígitos: aaaammdd o ddmmaaaa
-    If Len(s) = 8 And IsNumeric(s) And InStr(s, ".") = 0 And InStr(s, ",") = 0 Then
+    If Len(s) = 8 And SoloDigitos(s) Then
         If Left$(s, 2) = "19" Or Left$(s, 2) = "20" Then
             ok = FechaDesdePartes(CLng(Left$(s, 4)), CLng(Mid$(s, 5, 2)), CLng(Right$(s, 2)), res)
         End If
@@ -722,12 +751,93 @@ Public Function SerieAdmitida(ByVal doc As String, ByVal incluir As String, ByVa
     Dim serie As String
     serie = SerieDocumento(doc)
     If Trim$(incluir) <> "" Then
-        If Not EnLista(serie, incluir) Then Exit Function
+        If Not SerieEnLista(serie, incluir) Then Exit Function
     End If
     If Trim$(excluir) <> "" Then
-        If EnLista(serie, excluir) Then Exit Function
+        If SerieEnLista(serie, excluir) Then Exit Function
     End If
     SerieAdmitida = True
+End Function
+
+Private Function SerieEnLista(ByVal serie As String, ByVal lista As String) As Boolean
+    Dim partes() As String, i As Long
+    partes = Split(lista, ";")
+    For i = LBound(partes) To UBound(partes)
+        If SerieCoincide(serie, partes(i)) Then
+            SerieEnLista = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+' La serie escrita coincide si es la serie completa o su comienzo hasta un
+' separador: "F" vale para "F-2026-001" (serie "F 2026") y "FV" para
+' "FV2026-000017" (serie "FV2026"), pero "F" no vale para "FV2026".
+Private Function SerieCoincide(ByVal serie As String, ByVal valor As String) As Boolean
+    Dim sig As String, ult As String
+    valor = Normalizar(valor)
+    If valor = "" Or serie = "" Then Exit Function
+    If Left$(serie, Len(valor)) <> valor Then Exit Function
+    If Len(serie) = Len(valor) Then
+        SerieCoincide = True
+        Exit Function
+    End If
+    sig = Mid$(serie, Len(valor) + 1, 1)
+    ult = Right$(valor, 1)
+    If sig = " " Then
+        SerieCoincide = True
+    ElseIf sig >= "0" And sig <= "9" Then
+        SerieCoincide = Not (ult >= "0" And ult <= "9")
+    End If
+End Function
+
+' Número de factura tal como cabe en a3 (10 posiciones). Si es más largo se
+' quitan separadores y se conserva la parte final, que es la que distingue
+' una factura de otra (F2026/000123 -> 2026000123).
+Public Function DocumentoA3(ByVal doc As String) As String
+    doc = AsciiA3(doc)
+    If Len(doc) > 10 Then doc = Replace(Replace(Replace(Replace(doc, "-", ""), "/", ""), " ", ""), ".", "")
+    If Len(doc) > 10 Then doc = Right$(doc, 10)
+    DocumentoA3 = doc
+End Function
+
+' Normaliza un NIF: mayúsculas, sin espacios ni separadores y sin prefijo ES.
+Public Function NormalizarNIF(ByVal nif As String) As String
+    Dim s As String
+    s = UCase$(AsciiA3(nif))
+    s = Replace(Replace(Replace(Replace(Replace(s, " ", ""), "-", ""), ".", ""), "/", ""), "_", "")
+    If Len(s) = 11 And Left$(s, 2) = "ES" Then
+        If NIFValido(Mid$(s, 3)) Then s = Mid$(s, 3)
+    End If
+    NormalizarNIF = s
+End Function
+
+' Comprueba la letra o el dígito de control de un DNI, NIE o CIF español.
+Public Function NIFValido(ByVal nif As String) As Boolean
+    Const LETRAS As String = "TRWAGMYFPDXBNJZSQVHLCKE"
+    Dim cuerpo As String, c As String, i As Long, sumaPar As Long, sumaImpar As Long, d As Long, control As Long
+    If Len(nif) <> 9 Then Exit Function
+    c = Left$(nif, 1)
+    If c = "X" Or c = "Y" Or c = "Z" Then
+        cuerpo = CStr(InStr("XYZ", c) - 1) & Mid$(nif, 2, 7)
+        If Not SoloDigitos(cuerpo) Then Exit Function
+        NIFValido = (Mid$(LETRAS, (CLng(cuerpo) Mod 23) + 1, 1) = Right$(nif, 1))
+    ElseIf SoloDigitos(Left$(nif, 8)) Then
+        NIFValido = (Mid$(LETRAS, (CLng(Left$(nif, 8)) Mod 23) + 1, 1) = Right$(nif, 1))
+    ElseIf InStr("ABCDEFGHJKLMNPQRSUVW", c) > 0 And SoloDigitos(Mid$(nif, 2, 7)) Then
+        For i = 2 To 8
+            d = CLng(Mid$(nif, i, 1))
+            If i Mod 2 = 1 Then
+                sumaPar = sumaPar + d                          ' posiciones 2, 4 y 6 del número
+            Else
+                d = d * 2
+                sumaImpar = sumaImpar + (d \ 10) + (d Mod 10)
+            End If
+        Next i
+        control = (10 - ((sumaPar + sumaImpar) Mod 10)) Mod 10
+        c = Right$(nif, 1)
+        NIFValido = (c = CStr(control) Or c = Mid$("JABCDEFGHI", control + 1, 1))
+    End If
 End Function
 
 ' =====================================================================
@@ -754,7 +864,7 @@ Public Function RegistroCabeceraFactura(ByVal empresa As String, ByVal fecha As 
         ByVal fechaOperacion As Date, ByVal fechaFactura As Date) As String
     Dim r As String
     r = "4" & CodigoEmpresaA3(empresa) & FechaA3(fecha) & IIf(esAbono, "2", "1") & _
-        TextoA3(cuenta, 12) & TextoA3(descCuenta, 30) & tipoFactura & TextoA3(documento, 10) & _
+        TextoA3(cuenta, 12) & TextoA3(descCuenta, 30) & tipoFactura & TextoA3(DocumentoA3(documento), 10) & _
         "I" & TextoA3(descApunte, 30) & ImporteA3(total) & Space$(62) & _
         TextoA3(nif, 14) & TextoA3(nombre, 40) & TextoA3(cp, 5) & "  " & _
         FechaA3(fechaOperacion) & FechaA3(fechaFactura) & "E" & "N"
@@ -762,20 +872,27 @@ Public Function RegistroCabeceraFactura(ByVal empresa As String, ByVal fecha As 
 End Function
 
 ' Registro 9: detalle de IVA (una línea por cuenta de ventas y tipo de IVA)
+'   tipoImporte: "C" cargo (lo normal) / "A" abono en factura
+'   marcaCaja (177) y marca0 (178): en blanco salvo casos especiales
+'   ctaIVA2 / ctaRE2 (228-251): IVA y recargo repercutido de la autorrepercusión
+'   (facturas recibidas con inversión del sujeto pasivo o intracomunitarias)
 Public Function RegistroDetalleIVA(ByVal empresa As String, ByVal fecha As Date, ByVal cuenta As String, _
-        ByVal descCuenta As String, ByVal documento As String, ByVal lineaApunte As String, _
+        ByVal descCuenta As String, ByVal tipoImporte As String, ByVal documento As String, ByVal lineaApunte As String, _
         ByVal descApunte As String, ByVal subtipo As String, ByVal baseImp As Currency, _
         ByVal pctIVA As Currency, ByVal cuota As Currency, ByVal pctRE As Currency, ByVal cuotaRE As Currency, _
         ByVal pctRet As Currency, ByVal cuotaRet As Currency, ByVal impreso As String, _
-        ByVal ctaIVA As String, ByVal ctaRE As String, ByVal ctaRet As String) As String
+        ByVal marcaCaja As String, ByVal marca0 As String, _
+        ByVal ctaIVA As String, ByVal ctaRE As String, ByVal ctaRet As String, _
+        ByVal ctaIVA2 As String, ByVal ctaRE2 As String) As String
     Dim r As String
     r = "4" & CodigoEmpresaA3(empresa) & FechaA3(fecha) & "9" & _
-        TextoA3(cuenta, 12) & TextoA3(descCuenta, 30) & "C" & TextoA3(documento, 10) & _
+        TextoA3(cuenta, 12) & TextoA3(descCuenta, 30) & Left$(tipoImporte & "C", 1) & _
+        TextoA3(DocumentoA3(documento), 10) & _
         lineaApunte & TextoA3(descApunte, 30) & Right$("00" & subtipo, 2) & _
         ImporteA3(baseImp) & PorcentajeA3(pctIVA) & ImporteA3(cuota) & _
         PorcentajeA3(pctRE) & ImporteA3(cuotaRE) & PorcentajeA3(pctRet) & ImporteA3(cuotaRet) & _
-        Right$("00" & impreso, 2) & "S" & "N" & " " & Space$(14) & _
-        TextoA3(ctaIVA, 12) & TextoA3(ctaRE, 12) & TextoA3(ctaRet, 12) & Space$(24) & _
+        Right$("00" & impreso, 2) & "S" & "N" & Left$(marcaCaja & " ", 1) & Left$(marca0 & " ", 1) & Space$(13) & _
+        TextoA3(ctaIVA, 12) & TextoA3(ctaRE, 12) & TextoA3(ctaRet, 12) & TextoA3(ctaIVA2, 12) & TextoA3(ctaRE2, 12) & _
         " " & "E" & "N"
     RegistroDetalleIVA = r
 End Function
@@ -1107,6 +1224,19 @@ Public Function SeparadorCSV(ByVal texto As String, ByVal separador As String) A
     If nC > nPC And nC >= nT And nC >= nB Then SeparadorCSV = ","
     If nT > nPC And nT > nC And nT >= nB Then SeparadorCSV = vbTab
     If nB > nPC And nB > nC And nB > nT Then SeparadorCSV = "|"
+End Function
+
+' Lee un elemento de una colección. Devuelve False si la clave no existe.
+Public Function LeerColeccion(ByVal c As Collection, ByVal clave As String, ByRef valor As Variant) As Boolean
+    Dim v As Variant
+    On Error Resume Next
+    v = c(clave)
+    If Err.Number = 0 Then
+        valor = v
+        LeerColeccion = True
+    End If
+    Err.Clear
+    On Error GoTo 0
 End Function
 
 ' Pasa cualquier valor de Range.Value a matriz 2D (1..n, 1..m)

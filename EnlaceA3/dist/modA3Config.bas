@@ -60,7 +60,8 @@ Public Const CAMPO_PCT_RET As Long = 21
 Public Const CAMPO_CUOTA_RET As Long = 22
 Public Const CAMPO_FECHA_OP As Long = 23
 Public Const CAMPO_SUBTIPO As Long = 24
-Public Const NUM_CAMPOS As Long = 24
+Public Const CAMPO_IMPRESO As Long = 25
+Public Const NUM_CAMPOS As Long = 25
 
 ' --- Tabla de IVA de la empresa en curso ---------------------------------
 Public gIvaPct() As Currency
@@ -140,6 +141,7 @@ Public Function CampoClave(ByVal campo As Long) As String
         Case CAMPO_CUOTA_RET: CampoClave = "CUOTA_RETENCION"
         Case CAMPO_FECHA_OP: CampoClave = "FECHA_OPERACION"
         Case CAMPO_SUBTIPO: CampoClave = "SUBTIPO"
+        Case CAMPO_IMPRESO: CampoClave = "IMPRESO"
     End Select
 End Function
 
@@ -168,7 +170,8 @@ Public Function CampoDescripcion(ByVal campo As Long) As String
         Case CAMPO_PCT_RET: CampoDescripcion = "% de retención"
         Case CAMPO_CUOTA_RET: CampoDescripcion = "Cuota de retención"
         Case CAMPO_FECHA_OP: CampoDescripcion = "Fecha de operación (si falta: la de la factura)"
-        Case CAMPO_SUBTIPO: CampoDescripcion = "Subtipo a3 (01 interior, 02 exenta, 03 intracomunitaria, 06 exportación...)"
+        Case CAMPO_SUBTIPO: CampoDescripcion = "Subtipo a3 (01 interior, 02 exenta, 03 intracomunitaria, 06 exportación, 08 ISP / no sujeta, 09 exenta con derecho)"
+        Case CAMPO_IMPRESO: CampoDescripcion = "Impreso a3 (01 = 347; 02 = 349 bienes; 11 = 349 servicios). Vacío: 02 si subtipo 03/04, si no 01"
     End Select
 End Function
 
@@ -216,12 +219,14 @@ Public Function PerfilPredefinido(ByVal nombre As String, ByRef per As TPerfil) 
             c(CAMPO_CUOTA_RET) = "?Cuota retención"
             c(CAMPO_FECHA_OP) = "?Fecha operación"
             c(CAMPO_SUBTIPO) = "?Subtipo"
+            c(CAMPO_IMPRESO) = "?Impreso"
             per.Nombre = "GENERAL"
             per.Separador = "auto"
             per.SepDecimal = "auto"
             per.FormatoFecha = "DMA"
-            per.ValoresAbono = "Abono;A;Rectificativa;R;Nota de crédito;NC"
+            per.ValoresAbono = "Abono;A;Nota de crédito;NC"
             per.ValoresTicket = "Ticket;T;Simplificada;S;Factura simplificada"
+            per.ValoresRectificativa = "Rectificativa;R"
             per.NombreVacio = "Clientes varios"
             per.AbonoSiNegativo = True
             per.FilaCabecera = 1
@@ -245,6 +250,7 @@ Public Function PerfilPredefinido(ByVal nombre As String, ByRef per As TPerfil) 
             per.FormatoFecha = "DMA"
             per.ValoresAbono = "Credit Note"
             per.ValoresTicket = "Receipt"
+            per.ValoresRectificativa = ""
             per.NombreVacio = "Factura simple"
             per.AbonoSiNegativo = False
             per.FilaCabecera = 1
@@ -282,9 +288,11 @@ End Function
 ' Busca una empresa por su código. Si no existe, devuelve emp.Existe = False
 ' con valores por defecto razonables.
 Public Function CargarEmpresa(ByVal codigo As String, ByRef emp As TEmpresa) As Boolean
-    Dim ws As Object, r As Long, n As Long, vacio As TEmpresa
-    emp = vacio
+    Dim ws As Object, r As Long, n As Long
     emp.Codigo = CodigoEmpresaA3(codigo)
+    emp.Nombre = "": emp.CtaClientes = "": emp.DescClientes = "": emp.CtaVentas = "": emp.DescVentas = ""
+    emp.CtaVentasAlt = "": emp.DescVentasAlt = "": emp.CtaRetencion = "": emp.CarpetaSalida = ""
+    emp.Existe = False: emp.Fila = 0
     emp.Digitos = 8
     emp.Perfil = "GENERAL"
     If Not ExisteHoja(HOJA_EMPRESAS) Then Exit Function
@@ -377,6 +385,7 @@ End Sub
 Public Sub CargarIVA(ByVal codigo As String)
     Dim ws As Object, r As Long, n As Long, cod As String, ok As Boolean
     Dim pct As Currency, pctRE As Currency, pasada As Long, cta As String, ctaRE As String, dummy As Currency
+    Dim celda As Object
     IvaReiniciar
     If Not ExisteHoja(HOJA_IVA) Then Exit Sub
     Set ws = ThisWorkbook.Worksheets(HOJA_IVA)
@@ -386,10 +395,10 @@ Public Sub CargarIVA(ByVal codigo As String)
         For r = 2 To n
             cod = ValorTexto(ws.Cells(r, 1).Value)
             If (pasada = 1 And cod <> "" And cod <> "*" And CodigoEmpresaA3(cod) = codigo) Or (pasada = 2 And cod = "*") Then
-                pct = LeerImporte(ws.Cells(r, 2).Value, "auto", ok)
+                pct = PorcentajeCelda(ws.Cells(r, 2), ok)
                 If ok Then
                     If Not IvaBuscar(pct, cta, dummy, ctaRE) Then
-                        pctRE = LeerImporte(ws.Cells(r, 4).Value, "auto", ok)
+                        pctRE = PorcentajeCelda(ws.Cells(r, 4), ok)
                         If Not ok Then pctRE = 0
                         IvaAgregar pct, ValorTexto(ws.Cells(r, 3).Value), pctRE, ValorTexto(ws.Cells(r, 5).Value)
                     End If
@@ -399,11 +408,23 @@ Public Sub CargarIVA(ByVal codigo As String)
     Next pasada
 End Sub
 
+' Porcentaje de una celda de configuración: si tiene formato % (21 % se guarda
+' como 0,21) se multiplica por 100 antes de redondear.
+Private Function PorcentajeCelda(ByVal celda As Object, ByRef ok As Boolean) As Currency
+    Dim v As Variant
+    v = celda.Value
+    If VarType(v) = vbDouble And InStr(1, CStr(celda.NumberFormat), "%") > 0 Then
+        v = CDbl(v) * 100
+    End If
+    PorcentajeCelda = LeerImporte(v, "auto", ok)
+End Function
+
 ' Lee un perfil de la hoja PERFILES (columna con su nombre en la fila 1).
 Public Function CargarPerfil(ByVal nombre As String, ByRef per As TPerfil, ByRef msg As String) As Boolean
     Dim ws As Object, col As Long, c As Long, r As Long, n As Long, clave As String, valor As String
-    Dim campos(1 To NUM_CAMPOS) As String, i As Long, vacio As TPerfil
-    per = vacio
+    Dim campos(1 To NUM_CAMPOS) As String, i As Long
+    per.Nombre = "": per.Campos = "": per.ValoresAbono = "": per.ValoresTicket = ""
+    per.ValoresRectificativa = "": per.NombreVacio = "": per.AbonoSiNegativo = False
     If Not ExisteHoja(HOJA_PERFILES) Then
         CargarPerfil = PerfilPredefinido(nombre, per)
         If Not CargarPerfil Then msg = "No existe la hoja " & HOJA_PERFILES & "."
@@ -432,6 +453,7 @@ Public Function CargarPerfil(ByVal nombre As String, ByRef per As TPerfil, ByRef
             Case "FORMATO_FECHA": If valor <> "" Then per.FormatoFecha = UCase$(valor)
             Case "VALORES_ABONO": per.ValoresAbono = valor
             Case "VALORES_TICKET": per.ValoresTicket = valor
+            Case "VALORES_RECTIFICATIVA": per.ValoresRectificativa = valor
             Case "NOMBRE_VACIO": per.NombreVacio = valor
             Case "ABONO_SI_NEGATIVO": per.AbonoSiNegativo = EnLista(valor, "SI;S;X;1;VERDADERO;TRUE")
             Case "FILA_CABECERA": If IsNumeric(valor) And valor <> "" Then per.FilaCabecera = CLng(valor)
@@ -549,7 +571,9 @@ Private Sub CrearHojaIVA()
     EstiloCabecera ws.Range(ws.Cells(1, 1), ws.Cells(1, 6))
     ws.Rows(1).RowHeight = 45
     ws.Columns(1).NumberFormat = "@"
+    ws.Columns(2).NumberFormat = "0.00"
     ws.Columns(3).NumberFormat = "@"
+    ws.Columns(4).NumberFormat = "0.00"
     ws.Columns(5).NumberFormat = "@"
     datos = Array(Array("01692", 4, "47700004"), Array("01692", 10, "47700010"), Array("01692", 21, "47700021"))
     For i = 0 To UBound(datos)
@@ -582,6 +606,8 @@ Private Sub CrearHojaPerfiles()
     ws.Cells(r + 5, 1).Value = "NOMBRE_VACIO": ws.Cells(r + 5, 2).Value = "Nombre de cliente cuando viene vacío"
     ws.Cells(r + 6, 1).Value = "ABONO_SI_NEGATIVO": ws.Cells(r + 6, 2).Value = "SI = sin tipo, un total negativo se trata como abono"
     ws.Cells(r + 7, 1).Value = "FILA_CABECERA": ws.Cells(r + 7, 2).Value = "Fila donde están los nombres de las columnas"
+    ws.Cells(r + 8, 1).Value = "VALORES_RECTIFICATIVA": ws.Cells(r + 8, 2).Value = _
+        "Valores de TIPO que son rectificativas (tipo 2 con el signo del origen: en negativo disminuye, en positivo aumenta)"
     For k = 0 To UBound(nombres)
         col = 3 + k
         PerfilPredefinido CStr(nombres(k)), per
@@ -597,17 +623,18 @@ Private Sub CrearHojaPerfiles()
         ws.Cells(r + 5, col).Value = per.NombreVacio
         ws.Cells(r + 6, col).Value = IIf(per.AbonoSiNegativo, "SI", "NO")
         ws.Cells(r + 7, col).Value = per.FilaCabecera
+        ws.Cells(r + 8, col).Value = per.ValoresRectificativa
     Next k
     ws.Columns(1).ColumnWidth = 20
     ws.Columns(2).ColumnWidth = 60
     ws.Columns(3).ColumnWidth = 34
     ws.Columns(4).ColumnWidth = 22
     ws.Columns(5).ColumnWidth = 22
-    ws.Range(ws.Cells(1, 3), ws.Cells(r + 7, 10)).NumberFormat = "@"
+    ws.Range(ws.Cells(1, 3), ws.Cells(r + 8, 10)).NumberFormat = "@"
     EstiloCabecera ws.Range(ws.Cells(1, 1), ws.Cells(1, 5))
-    ws.Range(ws.Cells(2, 1), ws.Cells(r + 7, 1)).Font.Bold = True
-    ws.Range(ws.Cells(2, 2), ws.Cells(r + 7, 2)).Font.Color = COLOR_GRIS
-    ws.Range(ws.Cells(r, 1), ws.Cells(r + 7, 5)).Interior.Color = COLOR_ACP_CLARO
+    ws.Range(ws.Cells(2, 1), ws.Cells(r + 8, 1)).Font.Bold = True
+    ws.Range(ws.Cells(2, 2), ws.Cells(r + 8, 2)).Font.Color = COLOR_GRIS
+    ws.Range(ws.Cells(r, 1), ws.Cells(r + 8, 5)).Interior.Color = COLOR_ACP_CLARO
     ws.Range("C2").Select
     ActiveWindow.FreezePanes = True
 End Sub

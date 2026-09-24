@@ -1,0 +1,8 @@
+Asiento;Fecha;Cuenta;Concepto;Nombre cuenta;Referencia;Debe;Haber
+1;15/03/2026;570000000;Cobro factura;Caja;R1;1500.50;
+1;15/03/2026;430000001;Cobro factura;Cliente;R1;;1500.50
+2;16/03/2026;600000000;Compra;Compras;;1234.5;0
+2;16/03/2026;400000001;Compra;Proveedor;;0;1234.5
+3;17/03/2026;572000001;Solo una linea;Banco;;10.00;0
+4;18/03/2026;572000001;Descuadre;Banco;;10.00;0
+4;18/03/2026;570000000;Descuadre;Caja;;0;9.99

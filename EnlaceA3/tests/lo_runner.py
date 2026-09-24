@@ -3,16 +3,22 @@ from com.sun.star.beans import PropertyValue
 def pv(n,v):
     p=PropertyValue(); p.Name=n; p.Value=v; return p
 def start():
+    """Arranca un LibreOffice propio (puerto y perfil únicos: se pueden lanzar varias pruebas a la vez)."""
+    import socket, tempfile
+    sock = socket.socket(); sock.bind(("localhost", 0)); port = sock.getsockname()[1]; sock.close()
+    perfil = tempfile.mkdtemp(prefix="lo_perfil_")
     proc=subprocess.Popen(["soffice","--headless","--invisible","--norestore","--nologo",
-        "-env:UserInstallation=file:///tmp/claude-0/lo/profile",
-        '--accept=socket,host=localhost,port=2002;urp;'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        f"-env:UserInstallation=file://{perfil}",
+        f'--accept=socket,host=localhost,port={port};urp;'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    proc.perfil = perfil
     local=uno.getComponentContext()
     res=local.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver",local)
-    for i in range(60):
+    for i in range(120):
         try:
-            ctx=res.resolve("uno:socket,host=localhost,port=2002;urp;StarOffice.ComponentContext"); return proc,ctx
+            ctx=res.resolve(f"uno:socket,host=localhost,port={port};urp;StarOffice.ComponentContext"); return proc,ctx
         except Exception: time.sleep(0.5)
-    raise SystemExit("no soffice")
+    proc.terminate()
+    raise SystemExit("no arranca soffice")
 def run(modules, entry, args=()):
     proc,ctx=start()
     try:
@@ -32,6 +38,12 @@ def run(modules, entry, args=()):
         try: doc.close(True)
         except Exception: pass
         proc.terminate()
+        try:
+            proc.wait(timeout=20)
+        except Exception:
+            proc.kill()
+        import shutil
+        shutil.rmtree(proc.perfil, ignore_errors=True)
 if __name__=="__main__":
     mods=[]
     for f in sys.argv[2:]:

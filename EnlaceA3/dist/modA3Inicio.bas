@@ -27,6 +27,7 @@ End Sub
 Public Sub PrepararLibro()
     On Error GoTo Fallo
     Application.ScreenUpdating = False
+    ThisWorkbook.Activate
     CrearHojasConfiguracion
     If Not ExisteHoja(HOJA_PLANT_DIARIO) Then CrearPlantillaDiario ThisWorkbook
     If Not ExisteHoja(HOJA_PLANT_FACTURAS) Then CrearPlantillaFacturas ThisWorkbook
@@ -40,7 +41,9 @@ Public Sub PrepararLibro()
            "- IVA: cuentas de IVA repercutido por empresa y tipo" & vbCrLf & _
            "- PERFILES: cómo leer el libro de facturas de cada programa" & vbCrLf & _
            "- PLANTILLA_DIARIO / PLANTILLA_FACTURAS: formatos de entrada" & vbCrLf & vbCrLf & _
-           "Guarda el libro como .xlsm para conservar las macros.", vbInformation, "Enlace contable a3"
+           IIf(EsLibroConMacros(), "Recuerda guardar el libro.", _
+               "ATENCIÓN: este libro todavía no está guardado como .xlsm. Guárdalo ahora como " & _
+               "'Libro de Excel habilitado para macros' o perderás las macros."), vbInformation, "Enlace contable a3"
     Exit Sub
 Fallo:
     Application.ScreenUpdating = True
@@ -84,7 +87,7 @@ End Sub
 Public Function EjecutarEnlace(ByRef p As TParametros, ByRef fil As TFiltros, ByVal soloAnalizar As Boolean, _
                                ByRef informe As String, ByRef rutaDatFinal As String) As Boolean
     Dim emp As TEmpresa, per As TPerfil, res As TResumen, datos As Variant, msg As String
-    Dim rutaDat As String, rutaCtrl As String, copia As String, ok As Boolean
+    Dim rutaDat As String, rutaCtrl As String, copia As String, ok As Boolean, avisoFinal As String
 
     informe = ""
     rutaDatFinal = ""
@@ -170,20 +173,31 @@ Public Function EjecutarEnlace(ByRef p As TParametros, ByRef fil As TFiltros, By
     If p.CopiaSeguridad Then copia = CopiaSeguridadDat(rutaDat)
     EscribirDat rutaDat
     rutaDatFinal = rutaDat
+
+    ' A partir de aquí el fichero ya está escrito: un fallo solo es un aviso
+    On Error Resume Next
     If p.GenerarControl Then
         rutaCtrl = UnirRuta(p.CarpetaSalida, "CONTROL_SUENLACE_" & emp.Codigo & "_" & MarcaTiempo() & ".xlsx")
+        Err.Clear
         CrearControl p, emp, fil, res, rutaDat, rutaCtrl
+        If Err.Number <> 0 Then
+            avisoFinal = avisoFinal & "AVISO: no se ha podido crear o guardar el Excel de control: " & Err.Description & vbCrLf
+            rutaCtrl = ""
+        End If
     End If
-
-    ' --- recordar la empresa -------------------------------------------------
+    Err.Clear
     emp.CarpetaSalida = p.CarpetaSalida
     If p.Modo = MODO_EMITIDAS Then emp.Perfil = p.Perfil
     GuardarUsoEmpresa emp
+    If Err.Number <> 0 Then avisoFinal = avisoFinal & "AVISO: no se ha podido actualizar la hoja EMPRESAS: " & Err.Description & vbCrLf
+    Err.Clear
     GuardarPreferencia "A3_ULTIMA_EMPRESA", emp.Codigo
     GuardarPreferencia "A3_ULTIMO_MODO", CStr(p.Modo)
     GuardarLibroHerramienta
+    Err.Clear
+    On Error GoTo Fallo
 
-    informe = "SUENLACE.DAT GENERADO" & vbCrLf & rutaDat & vbCrLf & _
+    informe = avisoFinal & "SUENLACE.DAT GENERADO" & vbCrLf & rutaDat & vbCrLf & _
               IIf(copia <> "", "Copia del anterior: " & NombreDeRuta(copia) & vbCrLf, "") & _
               IIf(rutaCtrl <> "", "Excel de control: " & NombreDeRuta(rutaCtrl) & vbCrLf, "") & vbCrLf & informe
     EjecutarEnlace = True
@@ -220,6 +234,10 @@ Public Function ObtenerDatos(ByRef p As TParametros, ByVal separador As String, 
         End If
         datos = LeerHojaComoMatriz(ws)
         p.OrigenDescripcion = wb.FullName & "  [hoja " & ws.Name & "]"
+        On Error Resume Next
+        If ws.FilterMode Then p.OrigenDescripcion = p.OrigenDescripcion & _
+            "  (ATENCIÓN: la hoja tiene un filtro activo; se leen también las filas ocultas)"
+        On Error GoTo 0
     End If
     If ColumnasMatriz(datos) = 0 Then
         msg = "El origen está vacío."
@@ -256,6 +274,7 @@ Public Function TextoInforme(ByRef p As TParametros, ByRef emp As TEmpresa, ByRe
     Else
         s = s & "Facturas emitidas · perfil " & p.Perfil & " · plan de " & emp.Digitos & " dígitos" & vbCrLf
     End If
+    If p.OrigenDescripcion <> "" Then s = s & "Origen: " & p.OrigenDescripcion & vbCrLf
     s = s & "Filtros: " & TextoFiltros(p, fil) & vbCrLf
     If res.HayFechas Then s = s & "Fechas exportadas: " & FechaTexto(res.FechaMin) & " a " & FechaTexto(res.FechaMax) & vbCrLf
     s = s & String$(60, "-") & vbCrLf
@@ -323,9 +342,16 @@ End Function
 
 Private Sub GuardarLibroHerramienta()
     On Error Resume Next
-    If Not ThisWorkbook.ReadOnly Then ThisWorkbook.Save
+    If EsLibroConMacros() And Not ThisWorkbook.ReadOnly Then ThisWorkbook.Save
     On Error GoTo 0
 End Sub
+
+' ¿Está la herramienta guardada ya como libro con macros (.xlsm / .xlsb)?
+Public Function EsLibroConMacros() As Boolean
+    On Error Resume Next
+    EsLibroConMacros = (ThisWorkbook.Path <> "" And (ThisWorkbook.FileFormat = 52 Or ThisWorkbook.FileFormat = 50))
+    On Error GoTo 0
+End Function
 
 ' =====================================================================
 '  HOJA INICIO
@@ -438,6 +464,7 @@ Public Sub CrearPlantillaDiario(ByVal wb As Object)
     ws.Columns("F").ColumnWidth = 12
     ws.Columns("G:H").ColumnWidth = 13
     ws.Columns("C").NumberFormat = "@"
+    ws.Columns("F").NumberFormat = "@"
     ws.Columns("A").NumberFormat = "dd/mm/yyyy"
     ws.Columns("G:H").NumberFormat = "#,##0.00"
     ejemplo = Array( _
@@ -459,7 +486,9 @@ Public Sub CrearPlantillaDiario(ByVal wb As Object)
     ws.Range("J5").Value = "· Subcuenta con todos los dígitos del plan (o con punto: 572.1)."
     ws.Range("J6").Value = "· Importes en Debe o en Haber (el otro a 0 o vacío)."
     ws.Range("J7").Value = "· Textos de más de 30 caracteres se recortan; las tildes se quitan."
-    ws.Range("J2:J7").Font.Color = COLOR_GRIS
+    ws.Range("J8").Value = "· Documento en formato texto (máx. 10 caracteres). Al copiar de otro libro usa 'Pegar valores'."
+    ws.Range("J9").Value = "· Un asiento con cualquier error o de una sola línea se excluye entero y sale en el Excel de control."
+    ws.Range("J2:J9").Font.Color = COLOR_GRIS
     ws.Activate
     ActiveWindow.DisplayGridlines = True
     ws.Range("A2").Select
@@ -500,10 +529,10 @@ Public Sub CrearPlantillaFacturas(ByVal wb As Object)
     ws.Columns("R").NumberFormat = "@"
     ws.Range("G:G,I:J,O:O,Q:Q").NumberFormat = "#,##0.00"
     ejemplo = Array( _
-        Array(DateSerial(Year(Date), 1, 15), "F-2026-001", "Factura", "Cliente Ejemplo SL", "B12345678", "14001", 100, 21, 21, 121), _
-        Array(DateSerial(Year(Date), 1, 15), "F-2026-001", "Factura", "Cliente Ejemplo SL", "B12345678", "14001", 50, 10, 5, 55), _
+        Array(DateSerial(Year(Date), 1, 15), "F-2026-001", "Factura", "Cliente Ejemplo SL", "B12345674", "14001", 100, 21, 21, 121), _
+        Array(DateSerial(Year(Date), 1, 15), "F-2026-001", "Factura", "Cliente Ejemplo SL", "B12345674", "14001", 50, 10, 5, 55), _
         Array(DateSerial(Year(Date), 1, 20), "T-0001", "Ticket", "", "", "", 20, 10, 2, 22), _
-        Array(DateSerial(Year(Date), 1, 31), "R-2026-001", "Abono", "Cliente Ejemplo SL", "B12345678", "14001", -50, 10, -5, -55))
+        Array(DateSerial(Year(Date), 1, 31), "R-2026-001", "Abono", "Cliente Ejemplo SL", "B12345674", "14001", -50, 10, -5, -55))
     For r = 0 To UBound(ejemplo)
         For i = 0 To 9
             ws.Cells(r + 2, i + 1).Value = ejemplo(r)(i)
@@ -515,12 +544,16 @@ Public Sub CrearPlantillaFacturas(ByVal wb As Object)
     ws.Range("U1").Font.Color = COLOR_ACP
     ws.Range("U2").Value = "· Una fila por factura y tipo de IVA (si una factura tiene 10% y 21%, van dos filas con el mismo nº)."
     ws.Range("U3").Value = "· Cabecera azul = obligatoria. Azul oscuro = opcional (si falta o está vacía se usa la hoja EMPRESAS / IVA)."
-    ws.Range("U4").Value = "· Tipo: Factura, Ticket o Abono. Los abonos pueden ir en negativo o en positivo."
+    ws.Range("U4").Value = "· Tipo: Factura, Ticket, Abono o Rectificativa. Abono: en negativo o en positivo (siempre resta). " & _
+                           "Rectificativa: con su signo (negativa resta, positiva suma)."
     ws.Range("U5").Value = "· Total vacío = base + cuota + recargo - retención. Si se informa, debe cuadrar."
     ws.Range("U6").Value = "· Subtipo a3: 01 interior (por defecto), 02 exenta, 03 intracomunitaria, 06 exportación..."
     ws.Range("U7").Value = "· Anulada: cualquier dato (X, SI...) excluye el documento."
     ws.Range("U8").Value = "· Las filas grises son un ejemplo: bórralas."
-    ws.Range("U2:U8").Font.Color = COLOR_GRIS
+    ws.Range("U9").Value = "· Nº de factura: a3 guarda 10 caracteres (si es más largo se quitan separadores y se deja el final)."
+    ws.Range("U10").Value = "· Columna opcional 'Impreso' (01 = 347, 02 = 349 bienes, 11 = 349 servicios). Vacía: 02 si subtipo 03/04."
+    ws.Range("U11").Value = "· NIF sin guiones ni espacios; CP de 5 cifras (se usan para el 347)."
+    ws.Range("U2:U11").Font.Color = COLOR_GRIS
     ws.Activate
     ActiveWindow.DisplayGridlines = True
     ws.Range("A2").Select
