@@ -1,0 +1,5 @@
+Fecha;Nº Factura;Tipo;Cliente;NIF;CP;Base imponible;% IVA;Cuota IVA;Total
+01/03/2026;E-1;Factura;Cliente Uno;B14000101;14001;100,00;21;21,00;
+02/03/2026;E-2;Factura;Cliente Uno;B14000101;14001;100,00;21;21,00;121,00
+02/03/2026;E-2;Factura;Cliente Uno;B14000101;14001;50,00;10;5,00;
+03/03/2026;E-3;Factura;Cliente Dos;B14000102;14002;10,00;21;2,10;12,10
