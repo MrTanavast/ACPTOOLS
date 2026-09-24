@@ -549,6 +549,9 @@ Public Function LeerPorcentaje(ByVal v As Variant, ByVal sepDecimal As String, B
                 LeerPorcentaje = Redondear2(d * 100)
                 Exit Function
             End If
+        Case vbString
+            ' "21%" o "5,2 %" (así guarda Excel en CSV una columna con formato %)
+            If Right$(Trim$(v), 1) = "%" Then v = Left$(Trim$(v), Len(Trim$(v)) - 1)
     End Select
     LeerPorcentaje = LeerImporte(v, sepDecimal, ok)
 End Function
@@ -825,6 +828,13 @@ Public Function NIFValido(ByVal nif As String) As Boolean
     ElseIf SoloDigitos(Left$(nif, 8)) Then
         NIFValido = (Mid$(LETRAS, (CLng(Left$(nif, 8)) Mod 23) + 1, 1) = Right$(nif, 1))
     ElseIf InStr("ABCDEFGHJKLMNPQRSUVW", c) > 0 And SoloDigitos(Mid$(nif, 2, 7)) Then
+        ' K, L y M (personas sin DNI): hay fuentes que usan la letra del DNI
+        If InStr("KLM", c) > 0 Then
+            If Mid$(LETRAS, (CLng(Mid$(nif, 2, 7)) Mod 23) + 1, 1) = Right$(nif, 1) Then
+                NIFValido = True
+                Exit Function
+            End If
+        End If
         For i = 2 To 8
             d = CLng(Mid$(nif, i, 1))
             If i Mod 2 = 1 Then

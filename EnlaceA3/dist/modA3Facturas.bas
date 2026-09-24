@@ -800,7 +800,8 @@ Private Sub ProcesarDocumentoFactura(ByRef emp As TEmpresa, ByRef per As TPerfil
         cp = AsciiA3(gLinFac(primera).CP)
         If cp <> "" And Not (Len(cp) = 5 And SoloDigitos(cp)) Then
             IncAgregar fechaOk, fecha, doc, gLinFac(primera).Fila, INC_AVISO, _
-                "Código postal no español (" & cp & "): se deja en blanco", "Incluido - verificar"
+                "Código postal no español o incompleto (" & cp & "): se deja en blanco", _
+                "Incluido - si es español, escríbelo con sus 5 cifras"
             cp = ""
         End If
     End If

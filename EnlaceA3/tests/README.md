@@ -11,20 +11,26 @@ python3 tests/run_all.py
   igual que `datos/SUENLACE_referencia_01692.DAT` (el que se importó bien en a3).
 - `test_diario_lo.py`: diario con casos límite → se compara con `oraculo_diario.py`
   (implementación independiente del registro tipo 0 en Python).
-- `test_general_lo.py`: casos límite del perfil **GENERAL** de facturas emitidas (17 escenarios
+- `test_general_lo.py`: casos límite del perfil **GENERAL** de facturas emitidas (21 escenarios
   en una sola sesión de LibreOffice) comparados documento a documento con `oraculo_facturas.py`
   (implementación independiente de los registros 1/2 y 9 a partir de las posiciones de la
   especificación de a3 y de las reglas del procedimiento). Datos en `datos/general_*.csv`
   (`general_casos.csv` está en ANSI 1252 + CRLF, como lo guarda Excel en español) y un origen
-  "hoja de Excel" con valores con tipo (fechas, números, % con formato %).
+  "hoja de Excel" con valores con tipo (fechas, números, % con formato %, CP numérico, #N/D).
   Cubre: dos tipos de IVA y dos cuentas de ventas por línea, ticket, abono en negativo y en
-  positivo, recargo (con y sin %), retención, cuentas con punto, cuenta de longitud incorrecta,
-  IVA sin configurar, descuadre, línea a cero, anulada, subtipo 02, importes `1.234,56` y
-  `1234.56`, fechas `15/01/2026`, `2026-01-15` y `15-01-26`, nº de más de 10 caracteres y los
-  filtros de fecha, rango de documentos, series (incluir / excluir) y tipos.
-  Mientras haya errores del VBA abiertos la prueba falla y marca cada diferencia con su
-  hallazgo (`casos-limite-01` … `06`, lista `CONOCIDOS`); una diferencia sin documentar sale
-  como `NUEVO`.
+  positivo, abono por signo sin tipo, rectificativa en negativo y en positivo, recargo (con y sin
+  %, sin % en ninguna parte, cuota que no cuadra), retención (signo cambiado, sin % calculable y
+  no calculable, cuota que no cuadra), total vacío, cuentas con punto, cuenta de longitud
+  incorrecta, IVA sin configurar, descuadre, línea a cero, anulada y reemisión con el mismo nº,
+  subtipo vacío con IVA 0 %, subtipo 07, impreso 11 y 02, NIF con prefijo ES / DNI / NIE /
+  extranjero / erróneo, CP no español, importes `1.234,56` y `1234.56`, fechas `15/01/2026`,
+  `2026-01-15` y `15-01-26`, nº de más de 10 caracteres y nº repetido en a3, y los filtros de
+  fecha, rango de documentos, series (incluir / excluir, "F" frente a "FV2026") y tipos.
+  Los NIF de los datos tienen dígito de control válido salvo los que prueban NIF erróneos.
+  Exclusiones y avisos se comparan por documento y categoría contando repeticiones.
+  Si aparece un error del VBA se documenta en la lista `CONOCIDOS` (hallazgo `casos-limite-NN`):
+  mientras siga abierto la prueba falla y marca cada diferencia con su hallazgo; una diferencia
+  sin documentar sale como `NUEVO`. Los hallazgos `casos-limite-01` … `06` ya están corregidos.
 - `lo_merge.py` une los módulos en uno (LibreOffice no comparte `Type` entre módulos).
 - `lo_bisect.py`, `lo_traza.py`: localizan errores de compilación / ejecución.
 

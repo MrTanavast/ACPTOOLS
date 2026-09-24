@@ -3,9 +3,13 @@ LibreOffice (una sola sesión para todos los escenarios) y cada documento se com
 con el oráculo independiente oraculo_facturas.py (registros 1/2 y 9, exclusiones,
 avisos y resumen).
 
+Exclusiones y avisos se comparan por documento y categoría contando repeticiones (los avisos
+de línea salen una vez por línea); en las exclusiones por datos no válidos se comprueba además
+que el texto del VBA menciona cada motivo que ve el oráculo.
+
 Los fallos que corresponden a errores reales del VBA ya documentados se marcan con el
-identificador del hallazgo (casos-limite-NN). La prueba termina con código 1 mientras
-alguno siga abierto; cuando se corrija el VBA debe pasar sin tocar nada aquí."""
+identificador del hallazgo (casos-limite-NN, lista CONOCIDOS). La prueba termina con código 1
+mientras alguno siga abierto; cuando se corrija el VBA debe pasar sin tocar nada aquí."""
 import datetime
 import pathlib
 import sys
@@ -40,22 +44,31 @@ CAB = ["Fecha", "Nº Factura", "Tipo", "Cliente", "NIF", "CP", "Base imponible",
        "Cuota retención", "Subtipo", "Anulada"]
 
 
-def fila(fecha, doc, tipo, cliente, nif, cp, base, piva, cuota, total, pre=None, cre=None, pret=None, cret=None):
+def fila(fecha, doc, tipo, cliente, nif, cp, base, piva, cuota, total, pre=None, cre=None, pret=None, cret=None,
+         st=None, anu=None):
     return [fecha, doc, tipo, cliente, nif, cp, base, piva, cuota, total, None, None, None, pre, cre, pret, cret,
-            None, None]
+            st, anu]
 
 
 HOJA = [CAB,
         # recargo 5,2 % escrito en Excel como "5,2%" -> celda numérica 0,052
-        fila(D(2026, 2, 1), "H-1", "Factura", "Mayorista Sur S.L.", "B41000001", "41001", 100.0, 0.21, 21.0, 126.2,
+        fila(D(2026, 2, 1), "H-1", "Factura", "Mayorista Sur S.L.", "B41000019", "41001", 100.0, 0.21, 21.0, 126.2,
              pre=0.052, cre=5.2),
         # retención 15 % escrita como "15%" -> 0,15
-        fila(D(2026, 2, 2), "H-2", "Factura", "Asesoría Técnica Ruiz", "B41000002", "41002", 1000.0, 0.21, 210.0,
+        fila(D(2026, 2, 2), "H-2", "Factura", "Asesoría Técnica Ruiz", "B41000027", "41002", 1000.0, 0.21, 210.0,
              1060.0, pret=0.15, cret=150.0),
         # nº de factura numérico, IVA 10 % como 0,1
-        fila(D(2026, 2, 3), 1001.0, "Factura", "Cliente Numérico", "B41000003", "41003", 1234.56, 0.1, 123.46,
+        fila(D(2026, 2, 3), 1001.0, "Factura", "Cliente Numérico", "B41000035", "41003", 1234.56, 0.1, 123.46,
              1358.02),
-        fila(D(2026, 2, 4), "H-4", "Abono", "Mayorista Sur S.L.", "B41000001", "41001", -50.0, 0.21, -10.5, -60.5)]
+        fila(D(2026, 2, 4), "H-4", "Abono", "Mayorista Sur S.L.", "B41000019", "41001", -50.0, 0.21, -10.5, -60.5),
+        # IVA 4 % como 0,04 y recargo 0,5 % escrito como número 0,5: NO es formato % (límite 0,1)
+        fila(D(2026, 2, 5), "H-5", "Factura", "Farmacia Sur", "B41000050", "41005", 100.0, 0.04, 4.0, 104.5,
+             pre=0.5, cre=0.5),
+        # CP en celda numérica (8001 -> 08001) y subtipo numérico 2 -> 02
+        fila(D(2026, 2, 6), "H-6", "Factura", "Exportaciones Norte", "B08000010", 8001.0, 200.0, 0.0, 0.0, 200.0,
+             st=2.0),
+        # celda con error de fórmula (#N/D) en una columna de texto del perfil
+        fila(D(2026, 2, 7), "H-7", "Factura", O.ErrorCelda(), "B41000076", "41007", 100.0, 0.21, 21.0, 121.0)]
 
 # ------------------------------------------------------------------------------
 #  Escenarios: (nombre, origen, filtros)
@@ -78,27 +91,21 @@ ESCENARIOS = [
     ("total_vacio", "general_total_vacio.csv", {}),
     ("plantilla_excl_R", "general_casos.csv", dict(excl="R")),
     ("plantilla_incl_F", "general_casos.csv", dict(incl="F")),
+    # "FV" vale para FV2026-*, "T" para T-0001 y "F-20" no vale para "F 2026" (acaba en dígito)
+    ("plantilla_incl_FV", "general_casos.csv", dict(incl="FV;F-20;T")),
+    ("reglas", "general_reglas.csv", {}),
+    ("reglas_sin_abonos", "general_reglas.csv", dict(abonos=False)),
+    ("reglas_solo_abonos", "general_reglas.csv", dict(facturas=False, tickets=False)),
     ("hoja_excel", "HOJA", {}),
 ]
 
 # Fallos conocidos (errores del VBA documentados): hallazgo -> {escenario: documentos}.
 # "*" = diferencias del resumen del escenario; "F-2026-*" = prefijo; "#colision" = nº repetido en a3.
 # Cualquier otra diferencia se informa como NUEVA.
-CONOCIDOS = {
-    # Total vacío en la fila: no se calcula base + cuota + recargo - retención
-    "casos-limite-01": {"total_vacio": ["E-1", "E-2", "*"]},
-    # filtro de tipos aplicado por línea antes de saber que un documento sin tipo y negativo es abono
-    "casos-limite-02": {"sintipo_sin_abonos": ["V-2", "*"], "sintipo_solo_abonos": ["V-2", "*"]},
-    # % de recargo / retención de una celda con formato % (0,052) se redondea a 0,05
-    "casos-limite-03": {"hoja_excel": ["H-1", "H-2"]},
-    # la serie de "F-2026-001" es "F 2026": "Solo las series F" / "Excluir series R" no funcionan
-    "casos-limite-04": {"plantilla_excl_R": ["R-2026-001", "R-2026-002", "*"],
-                        "plantilla_incl_F": ["F-2026-*", "*"]},
-    # impreso 01 (347) en una entrega intracomunitaria (subtipo 03)
-    "casos-limite-05": {"completo": ["F-2026-020"], "plantilla_excl_R": ["F-2026-020"]},
-    # FV2026-000017 y FV2026-000018 llegan a a3 con el mismo nº "FV2026-000"
-    "casos-limite-06": {"completo": ["#colision"], "plantilla_excl_R": ["#colision"]},
-}
+# Corregidos en el VBA (ya no se esperan): casos-limite-01 (total vacío), 02 (filtro de tipos por
+# documento), 03 (% con formato % de Excel), 04 (series "F" / "R" de "F-2026-001"), 05 (impreso 02 en
+# subtipo 03) y 06 (nº de factura repetido en a3).
+CONOCIDOS = {}
 
 
 def hallazgo_conocido(escenario, doc):
@@ -113,6 +120,8 @@ def hallazgo_conocido(escenario, doc):
 #  Generación del código VBA de la prueba
 # ------------------------------------------------------------------------------
 def vb(v):
+    if isinstance(v, O.ErrorCelda):
+        return f"CVErr({v.codigo})"
     if isinstance(v, str):
         return '"' + v.replace('"', '""') + '"'
     if isinstance(v, datetime.date):
@@ -165,7 +174,7 @@ def codigo_vba():
     L.append("    s = \"RES\" & vbTab & res.UnidadesLeidas & vbTab & res.UnidadesExportadas & vbTab & res.UnidadesExcluidas & _")
     L.append("        vbTab & res.FilasFiltradas & vbTab & res.NumFacturas & vbTab & res.NumTickets & vbTab & res.NumAbonos & _")
     L.append("        vbTab & gNDat & vbTab & ImporteA3(res.BaseImp) & vbTab & ImporteA3(res.Cuota) & vbTab & ImporteA3(res.CuotaRE) & _")
-    L.append("        vbTab & ImporteA3(res.CuotaRet) & vbTab & ImporteA3(res.Total)")
+    L.append("        vbTab & ImporteA3(res.CuotaRet) & vbTab & ImporteA3(res.Total) & vbTab & ImporteA3(res.TotalOrigen)")
     L.append("    For i = 1 To gNInc")
     L.append("        s = s & Chr(10) & \"INC\" & vbTab & gInc(i).Gravedad & vbTab & gInc(i).Referencia & vbTab & gInc(i).Fila & vbTab & gInc(i).Texto")
     L.append("    Next i")
@@ -238,12 +247,26 @@ def por_documento(lineas):
     return out
 
 
-CAT_EXCL = [("anulado", "ANULADO"), ("Datos no válidos", "DATOS"), ("Importe 0,00", "CERO"),
+CAT_EXCL = [("Documento anulado", "ANULADO"), ("Datos no válidos", "DATOS"), ("Importe 0,00", "CERO"),
             ("Sin líneas", "SINLINEAS"), ("Tipo de IVA no configurado", "IVA"), ("Cuenta no válida", "CUENTA"),
-            ("Descuadre", "DESCUADRE")]
-CAT_AVISO = [("Abono con importes en positivo", "ABONO_POSITIVO"), ("Factura con total negativo", "NEGATIVA"),
+            ("Descuadre", "DESCUADRE"), ("repetido en a3", "REPETIDO")]
+# el orden importa: gana la primera clave que aparece en el texto
+CAT_AVISO = [("Rectificativa que aumenta la factura original", "RECT_AUMENTA"),
+             ("Abono con importes en positivo", "ABONO_POSITIVO"), ("Factura con total negativo", "NEGATIVA"),
              ("base y cuota a 0 pero con total", "CERO_CON_TOTAL"), ("más de 10 caracteres", "DOC_LARGO"),
-             ("no cuadra con base", "CUOTA")]
+             ("Mismo nº y fecha que un documento anulado", "CON_ANULADO"),
+             ("La cuota de recargo", "CUOTA_RE"), ("La retención", "CUOTA_RET"), ("no cuadra con base", "CUOTA"),
+             ("retención con el signo cambiado", "RET_SIGNO"), ("retención sin %", "RET_SIN_PCT"),
+             ("IVA 0% sin subtipo", "IVA0_SIN_SUBTIPO"), ("no es un NIF español válido", "NIF"),
+             ("Código postal no español", "CP")]
+# motivo de exclusión por datos del oráculo -> texto que debe aparecer en la incidencia del VBA
+MOTIVOS_DATOS = {"celda_error": "error de fórmula", "fecha": "fecha no válida", "doc": "número de factura vacío",
+                 "fecha_op": "fecha de operación no válida", "base": "base no numérica",
+                 "piva": "% IVA no numérico", "cuota": "cuota no numérica", "pre": "% recargo no numérico",
+                 "cre": "cuota de recargo no numérica", "pret": "% retención no numérico",
+                 "cret": "retención no numérica", "total": "total no numérico",
+                 "ret_sin_pct": "no es un tipo habitual", "re_sin_pct": "recargo de equivalencia sin %",
+                 "subtipo": "subtipo no válido", "impreso": "impreso no válido"}
 
 
 def categoria(texto, tabla):
@@ -251,6 +274,11 @@ def categoria(texto, tabla):
         if clave in texto:
             return cat
     return "OTRO: " + texto
+
+
+def categorias_aviso(texto):
+    """Un aviso de lectura puede juntar varios separados por "; " (uno por línea del origen)."""
+    return [categoria(t, CAT_AVISO) for t in texto.split("; ")]
 
 
 def comparar(nombre, origen, f, bloque):
@@ -273,7 +301,7 @@ def comparar(nombre, origen, f, bloque):
             fallos.append(("*", f"registro de {len(l)} posiciones"))
     esp = R["lineas"]
     a, b = por_documento(obt), por_documento(esp)
-    nombres = {(O.txt(doc, 10).rstrip(), O.f8(fe)): doc for doc, fe, _ in R["exportados"]}
+    nombres = {(O.documento_a3(doc), O.f8(fe)): doc for doc, fe, _ in R["exportados"]}
     for k in list(dict.fromkeys(list(b) + list(a))):
         doc = nombres.get(k[:2], k[0])
         if k not in a:
@@ -292,18 +320,28 @@ def comparar(nombre, origen, f, bloque):
     for k, n in Counter((l[58:68], l[6:14]) for l in obt if l[14] in "12").items():
         if n > 1:
             fallos.append(("#colision", f"{n} facturas distintas llegan a a3 con el mismo nº {k[0].strip()!r} y fecha {k[1]}"))
-    # exclusiones y avisos
-    excl = {i[2]: categoria(i[4], CAT_EXCL) for i in incs if i[1] == "EXCLUIDO"}
-    for doc in sorted(set(excl) | set(R["excluidos"])):
-        if excl.get(doc) != R["excluidos"].get(doc):
-            fallos.append((doc, f"exclusión {excl.get(doc)} en vez de {R['excluidos'].get(doc)}"))
-    avisos = {(i[2], categoria(i[4], CAT_AVISO)) for i in incs if i[1] == "AVISO"}
-    for doc, cat in sorted(avisos ^ R["avisos"]):
-        fallos.append((doc, f"aviso {cat} " + ("de más" if (doc, cat) in avisos else "que falta")))
+    # exclusiones (documento + categoría, con repeticiones) y motivo de las de datos no válidos
+    excl_vba = [(i[2], categoria(i[4], CAT_EXCL), i[4]) for i in incs if i[1] == "EXCLUIDO"]
+    obt_c = Counter((d, c) for d, c, _ in excl_vba)
+    esp_c = Counter((d, c) for d, c, _ in R["excluidos"])
+    for doc, cat in sorted((obt_c - esp_c) + (esp_c - obt_c)):
+        fallos.append((doc, f"exclusión {cat} " + ("de más" if obt_c[(doc, cat)] > esp_c[(doc, cat)] else "que falta")))
+    for doc, cat, motivos in R["excluidos"]:
+        textos = [t for d, c, t in excl_vba if (d, c) == (doc, cat)]
+        for m in motivos:
+            if textos and not any(MOTIVOS_DATOS[m] in t for t in textos):
+                fallos.append((doc, f"la exclusión no menciona '{MOTIVOS_DATOS[m]}': {textos[0]}"))
+    # avisos (documento + categoría, con repeticiones: uno por línea en los avisos de línea)
+    obt_c = Counter((i[2], c) for i in incs if i[1] == "AVISO" for c in categorias_aviso(i[4]))
+    esp_c = Counter(R["avisos"])
+    for doc, cat in sorted((obt_c - esp_c) + (esp_c - obt_c)):
+        n_obt, n_esp = obt_c[(doc, cat)], esp_c[(doc, cat)]
+        fallos.append((doc, f"aviso {cat} " + (f"de más ({n_obt} en vez de {n_esp})" if n_obt > n_esp
+                                               else f"que falta ({n_obt} en vez de {n_esp})")))
     # resumen
     r = R["res"]
     nombres_res = ["leidas", "exp", "excl", "filtradas", "fact", "tick", "abon", "lineas",
-                   "base", "cuota", "cuota_re", "cuota_ret", "total"]
+                   "base", "cuota", "cuota_re", "cuota_ret", "total", "origen"]
     for n, v in zip(nombres_res, res_vba[1:]):
         e = r[n]
         e = O.imp(e) if isinstance(e, Decimal) else str(e)
