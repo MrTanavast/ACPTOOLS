@@ -15,7 +15,7 @@ Private Const XL_OPENXML As Long = 51
 ' Crea el libro de control. Si rutaGuardar no está vacía, lo guarda ahí.
 Public Function CrearControl(ByRef p As TParametros, ByRef emp As TEmpresa, ByRef fil As TFiltros, _
                              ByRef res As TResumen, ByVal rutaDat As String, ByVal rutaGuardar As String) As Object
-    Dim wb As Object, pantalla As Boolean, alertas As Boolean
+    Dim wb As Object, pantalla As Boolean, alertas As Boolean, numErr As Long, descErr As String
     pantalla = Application.ScreenUpdating
     alertas = Application.DisplayAlerts
     Application.ScreenUpdating = False
@@ -54,14 +54,15 @@ Public Function CrearControl(ByRef p As TParametros, ByRef emp As TEmpresa, ByRe
     Set CrearControl = wb
     Exit Function
 Fallo:
-    Dim numErr As Long, descErr As String
     numErr = Err.Number
     descErr = Err.Description
+    Resume Limpiar
+Limpiar:
     On Error Resume Next
     If Not wb Is Nothing Then wb.Close False
-    On Error GoTo 0
     Application.DisplayAlerts = alertas
     Application.ScreenUpdating = pantalla
+    On Error GoTo 0
     Err.Raise numErr, "CrearControl", descErr
 End Function
 

@@ -1,11 +1,22 @@
+VERSION 1.0 CLASS
+BEGIN
+  MultiUse = -1  'True
+END
+Attribute VB_Name = "clsA3Ventana"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
 ' =====================================================================
 '  ENLACE CONTABLE A3  ·  ACP ASOCIADOS
-'  CÓDIGO DEL FORMULARIO frmEnlaceA3
+'  Clase VENTANA: construye y maneja la ventana principal sobre un
+'  UserForm VACÍO llamado frmEnlaceA3 (no hay que pegar ningún código
+'  en el formulario: todo está aquí y se importa como los demás).
 '
-'  Cómo instalarlo: en el editor de VBA, Insertar > UserForm, cambia su
-'  propiedad (Name) a  frmEnlaceA3  y pega TODO este texto en su ventana
-'  de código (doble clic en el formulario > borra lo que haya > pegar).
-'  No hace falta dibujar nada: los controles se crean al abrirse.
+'  La usa la macro EnlaceA3 (modA3Inicio):
+'      Iniciar formulario  -> crea los controles y carga los valores
+'      (el formulario se muestra)
+'      Terminar            -> libera controles y referencias
 ' =====================================================================
 Option Explicit
 
@@ -18,6 +29,7 @@ Private mUltimaRuta As String
 Private mEmpresaExiste As Boolean
 Private mModoAnterior As Integer
 Private mVentana As Object
+Private mForm As Object          ' el UserForm frmEnlaceA3 (vacío)
 
 ' --- controles ------------------------------------------------------------
 Private txtEmpresa As MSForms.TextBox
@@ -72,17 +84,18 @@ Private Const PERIODO_PERSONAL As Long = 18
 ' =====================================================================
 '  ARRANQUE
 ' =====================================================================
-Private Sub UserForm_Initialize()
+Public Sub Iniciar(ByVal formulario As Object)
     Dim i As Long, perfiles As Variant, modo As String, emp As String
+    Set mForm = formulario
     mCargando = True
     Set mEventos = New Collection
     On Error Resume Next
     Set mVentana = ActiveWindow
     On Error GoTo 0
-    Me.Caption = "Enlace contable a3  ·  ACP Asociados"
-    Me.BackColor = COLOR_BLANCO
-    Me.Width = 712
-    Me.Height = 518
+    mForm.Caption = "Enlace contable a3  ·  ACP Asociados"
+    mForm.BackColor = COLOR_BLANCO
+    mForm.Width = 712
+    mForm.Height = 518
     ConstruirControles
 
     For i = 6 To 12
@@ -120,6 +133,18 @@ Private Sub UserForm_Initialize()
     ModoCambiado
     EmpresaCambiada
     AjustarAPantalla
+    Centrar
+End Sub
+
+' Centra la ventana sobre Excel
+Private Sub Centrar()
+    On Error Resume Next
+    mForm.StartUpPosition = 0                          ' manual
+    mForm.Left = Application.Left + (Application.Width - mForm.Width) / 2
+    mForm.Top = Application.Top + (Application.Height - mForm.Height) / 2
+    If mForm.Top < 0 Then mForm.Top = 0
+    If mForm.Left < 0 Then mForm.Left = 0
+    On Error GoTo 0
 End Sub
 
 ' En pantallas pequeñas o con escala grande, reduce la ventana para que quepa
@@ -131,11 +156,11 @@ Private Sub AjustarAPantalla()
     Else
         alto = Application.Height
     End If
-    If alto > 200 And Me.Height > alto - 10 Then
-        z = (alto - 10) / Me.Height
-        Me.Zoom = Int(z * 100)
-        Me.Width = Me.Width * z
-        Me.Height = Me.Height * z
+    If alto > 200 And mForm.Height > alto - 10 Then
+        z = (alto - 10) / mForm.Height
+        mForm.Zoom = Int(z * 100)
+        mForm.Width = mForm.Width * z
+        mForm.Height = mForm.Height * z
     End If
     On Error GoTo 0
 End Sub
@@ -144,15 +169,18 @@ End Sub
 Private Sub TraerAlFrente()
     On Error Resume Next
     If Not mVentana Is Nothing Then mVentana.Activate
-    AppActivate Me.Caption
+    AppActivate mForm.Caption
     On Error GoTo 0
 End Sub
 
-Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+' Libera los controles y las referencias (lo llama EnlaceA3 al cerrarse la ventana)
+Public Sub Terminar()
     LiberarEventos
+    Set mVentana = Nothing
+    Set mForm = Nothing
 End Sub
 
-Private Sub UserForm_Terminate()
+Private Sub Class_Terminate()
     LiberarEventos
 End Sub
 
@@ -316,7 +344,7 @@ End Sub
 Private Function Nuevo(ByVal progId As String, ByVal nombre As String, ByVal x As Single, ByVal y As Single, _
                        ByVal ancho As Single, ByVal alto As Single) As Object
     Dim c As Object
-    Set c = Me.Controls.Add(progId, nombre, True)
+    Set c = mForm.Controls.Add(progId, nombre, True)
     c.Left = x
     c.Top = y
     c.Width = ancho
@@ -460,7 +488,7 @@ Public Sub ControlEvento(ByVal nombre As String)
         Case "btnAbrirCarpeta"
             AbrirCarpeta
         Case "btnCerrar"
-            Unload Me
+            mForm.Hide
     End Select
     Exit Sub
 Fallo:
@@ -740,7 +768,7 @@ Private Sub ConfigurarEmpresa()
               "  Clientes " & emp.CtaClientes & "   Ventas " & emp.CtaVentas & "   IVA 477... por tipo" & vbCrLf & vbCrLf & _
               "Revisa las cuentas antes de generar el fichero." & vbCrLf & _
               "¿Quieres revisarlas ahora? (se cerrará esta ventana)", vbQuestion + vbYesNo, "Enlace contable a3") = vbYes Then
-        Unload Me
+        mForm.Hide
         ThisWorkbook.Worksheets(HOJA_EMPRESAS).Activate
         ThisWorkbook.Worksheets(HOJA_EMPRESAS).Cells(emp.Fila, 1).Select
     End If

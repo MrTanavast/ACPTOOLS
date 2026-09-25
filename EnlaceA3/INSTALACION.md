@@ -21,8 +21,8 @@ Todo va en **un único libro de Excel con macros (.xlsm)**, la "herramienta". **
 | `modA3Facturas.bas` | Motor de facturas emitidas | Importar |
 | `modA3Control.bas` | Excel de control | Importar |
 | `modA3Inicio.bas` | Macros de arranque, plantillas y orquestación | Importar |
-| `clsA3Evento.cls` | Clase auxiliar del formulario | Importar |
-| `frmEnlaceA3_codigo.txt` | Código de la ventana | **Pegar** en un formulario vacío |
+| `clsA3Ventana.cls` | La ventana: construye los controles y hace el trabajo | Importar |
+| `clsA3Evento.cls` | Clase auxiliar de la ventana (recoge los clics) | Importar |
 | `logo_acp.png` | Logo de ACP (opcional) | Dejarlo junto al .xlsm |
 
 ## 2. Montaje (una sola vez, unos 5 minutos)
@@ -32,11 +32,11 @@ Todo va en **un único libro de Excel con macros (.xlsm)**, la "herramienta". **
 3. **Crea primero el formulario**, antes de importar nada:
    - *Insertar > UserForm*.
    - En la ventana de Propiedades (F4), cambia **(Name)** de `UserForm1` a **`frmEnlaceA3`**.
-   - Haz doble clic sobre el formulario gris para abrir su código, borra lo que aparezca y **pega todo** el contenido de `frmEnlaceA3_codigo.txt`. Ábrelo con el Bloc de notas, Ctrl+A y Ctrl+C.
-   - No hay que dibujar nada: los botones y las casillas se crean solos al abrirse.
-4. **Importa los 7 ficheros**: *Archivo > Importar archivo…*, uno a uno:
+   - **Déjalo vacío**: ni dibujes controles ni pegues código. Los botones y las casillas se crean solos al abrirse; todo el código va en `clsA3Ventana.cls`.
+   - Se crea primero para que Excel active la referencia a los formularios, que necesitan las dos clases.
+4. **Importa los 8 ficheros**: *Archivo > Importar archivo…*, uno a uno:
    - los 6 `.bas`;
-   - `clsA3Evento.cls`.
+   - `clsA3Ventana.cls` y `clsA3Evento.cls`.
 5. *Depuración > Compilar VBAProject*. No debe salir ningún mensaje.
 6. Cierra el editor. En Excel, pulsa **Alt+F8**, elige **PrepararLibro** y pulsa Ejecutar. Se crean estas hojas:
    - **INICIO**, con los botones de la herramienta;
@@ -47,6 +47,10 @@ Todo va en **un único libro de Excel con macros (.xlsm)**, la "herramienta". **
 7. **Guarda**. Este es el archivo "maestro": haz una copia para cada compañera.
 
 > Si Excel avisa de que las macros están deshabilitadas: *Archivo > Opciones > Centro de confianza > Configuración > Configuración de macros*, o marca la carpeta como ubicación de confianza.
+
+> **Para actualizar a una versión nueva:** en el editor de VBA, quita los módulos `modA3…` y las clases `clsA3…` (clic derecho > *Quitar…* > *No* exportar) e importa los de la carpeta `dist/` nueva. El formulario y las hojas (EMPRESAS, IVA, PERFILES) no se tocan: tu configuración se conserva.
+
+> **Nunca copies el código desde el navegador o un PDF**: parte las líneas largas y mete pies de página, y VBA da "Se esperaba fin de la instrucción". Descarga los ficheros e impórtalos.
 
 ## 3. Uso diario
 

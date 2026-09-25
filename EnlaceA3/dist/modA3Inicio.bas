@@ -4,7 +4,8 @@ Attribute VB_Name = "modA3Inicio"
 '  Módulo INICIO: macros que se lanzan (Alt+F8 o botones de la hoja
 '  INICIO) y la orquestación de cada generación.
 '
-'    EnlaceA3               -> abre la ventana principal
+'    EnlaceA3               -> abre la ventana principal (formulario vacío
+'                              frmEnlaceA3 + clase clsA3Ventana)
 '    PrepararLibro          -> crea las hojas INICIO, EMPRESAS, IVA,
 '                              PERFILES y las plantillas (una sola vez)
 '    NuevaPlantillaDiario   -> libro nuevo con la plantilla de diario
@@ -21,7 +22,43 @@ Public Sub EnlaceA3()
                   "¿Las creo ahora?", vbQuestion + vbYesNo, "Enlace contable a3") = vbNo Then Exit Sub
         PrepararLibro
     End If
-    frmEnlaceA3.Show
+    AbrirVentana
+End Sub
+
+' Carga el UserForm vacío, le pone los controles (clsA3Ventana) y lo muestra.
+' El formulario se busca por nombre, así el proyecto compila aunque aún no exista.
+Private Sub AbrirVentana()
+    Dim f As Object, ventana As Object
+    On Error Resume Next
+    Set f = VBA.UserForms.Add("frmEnlaceA3")
+    If f Is Nothing Then
+        Err.Clear
+        Set f = VBA.UserForms.Add("UserForm1")
+    End If
+    On Error GoTo 0
+    If f Is Nothing Then
+        MsgBox "No encuentro el formulario de la herramienta." & vbCrLf & vbCrLf & _
+               "En el editor de VBA (Alt+F11): Insertar > UserForm y, en Propiedades (F4), " & _
+               "cambia su (Name) a frmEnlaceA3. El formulario se deja VACÍO: no hay que pegar nada.", _
+               vbExclamation, "Enlace contable a3"
+        Exit Sub
+    End If
+    If f.Controls.Count > 0 Then
+        MsgBox "El formulario " & f.Name & " tiene que estar VACÍO (sin controles ni código)." & vbCrLf & vbCrLf & _
+               "En el editor de VBA: doble clic en el formulario, borra todo su código y vuelve a probar." & vbCrLf & _
+               "Si tiene controles dibujados, quítalo (clic derecho > Quitar) e inserta uno nuevo.", _
+               vbExclamation, "Enlace contable a3"
+        Unload f
+        Exit Sub
+    End If
+    Set ventana = New clsA3Ventana
+    ventana.Iniciar f
+    f.Show                                   ' ventana modal: sigue aquí al cerrarla
+    ventana.Terminar
+    Set ventana = Nothing
+    On Error Resume Next
+    Unload f
+    On Error GoTo 0
 End Sub
 
 Public Sub PrepararLibro()

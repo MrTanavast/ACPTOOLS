@@ -9,8 +9,8 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' =====================================================================
 '  ENLACE CONTABLE A3  ·  ACP ASOCIADOS
-'  Clase auxiliar del formulario: recoge los eventos de los controles
-'  que el formulario crea por código y se los pasa al formulario.
+'  Clase auxiliar de la ventana: recoge los eventos de los controles
+'  que clsA3Ventana crea por código y se los pasa a clsA3Ventana.
 ' =====================================================================
 Option Explicit
 

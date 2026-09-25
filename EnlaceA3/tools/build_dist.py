@@ -1,14 +1,14 @@
 """Genera la carpeta dist/ lista para importar en Excel:
    - .bas / .cls en Windows-1252 y con saltos de línea CR/LF (el editor de VBA
      no lee bien UTF-8 ni saltos LF: las tildes saldrían mal).
-   - el código del formulario como .txt para pegar.
+   - el formulario (frmEnlaceA3) se crea vacío a mano: no lleva código.
    Uso:  python3 EnlaceA3/tools/build_dist.py"""
 import pathlib, shutil, sys
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SRC, DIST = RAIZ / "src", RAIZ / "dist"
 DIST.mkdir(exist_ok=True)
 MODULOS = ["modA3Nucleo.bas", "modA3Config.bas", "modA3Facturas.bas", "modA3Diario.bas",
-           "modA3Control.bas", "modA3Inicio.bas", "clsA3Evento.cls"]
+           "modA3Control.bas", "modA3Inicio.bas", "clsA3Evento.cls", "clsA3Ventana.cls"]
 def convertir(origen, destino):
     texto = origen.read_text(encoding="utf-8").replace("\r\n", "\n")
     try:
@@ -18,7 +18,10 @@ def convertir(origen, destino):
     destino.write_bytes(datos)
 for m in MODULOS:
     convertir(SRC / m, DIST / m)
-convertir(SRC / "frmEnlaceA3.codigo.bas", DIST / "frmEnlaceA3_codigo.txt")
+# ficheros que ya no forman parte del paquete
+for viejo in ["frmEnlaceA3_codigo.txt"]:
+    if (DIST / viejo).exists():
+        (DIST / viejo).unlink()
 for extra in ["logo_acp.png"]:
     if (RAIZ / "recursos" / extra).exists():
         shutil.copy(RAIZ / "recursos" / extra, DIST / extra)
