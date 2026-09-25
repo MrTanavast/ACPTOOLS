@@ -26,21 +26,14 @@ Public Sub EnlaceA3()
 End Sub
 
 ' Carga el UserForm vacío, le pone los controles (clsA3Ventana) y lo muestra.
-' El formulario se busca por nombre, así el proyecto compila aunque aún no exista.
 Private Sub AbrirVentana()
-    Dim f As Object, ventana As Object
-    On Error Resume Next
-    Set f = VBA.UserForms.Add("frmEnlaceA3")
+    Dim f As Object, ventana As Object, motivo As String
+    Set f = CrearFormulario(motivo)
     If f Is Nothing Then
-        Err.Clear
-        Set f = VBA.UserForms.Add("UserForm1")
-    End If
-    On Error GoTo 0
-    If f Is Nothing Then
-        MsgBox "No encuentro el formulario de la herramienta." & vbCrLf & vbCrLf & _
-               "En el editor de VBA (Alt+F11): Insertar > UserForm y, en Propiedades (F4), " & _
-               "cambia su (Name) a frmEnlaceA3. El formulario se deja VACÍO: no hay que pegar nada.", _
-               vbExclamation, "Enlace contable a3"
+        MsgBox "No se ha podido abrir el formulario frmEnlaceA3." & vbCrLf & vbCrLf & _
+               "Detalle: " & motivo & vbCrLf & vbCrLf & _
+               "Comprueba en el editor de VBA (Alt+F11) que en 'Formularios' existe frmEnlaceA3 " & _
+               "(Propiedades F4 > (Name)), vacío y sin código.", vbExclamation, "Enlace contable a3"
         Exit Sub
     End If
     If f.Controls.Count > 0 Then
@@ -106,6 +99,17 @@ Public Sub NuevaPlantillaFacturas()
     MsgBox "Plantilla de facturas emitidas creada en un libro nuevo." & vbCrLf & _
            "Una fila por factura y tipo de IVA. Usa el perfil GENERAL al generar.", vbInformation, "Enlace contable a3"
 End Sub
+
+' Crea una instancia del formulario vacío frmEnlaceA3
+Private Function CrearFormulario(ByRef motivo As String) As Object
+    On Error Resume Next
+    Set CrearFormulario = New frmEnlaceA3
+    If Err.Number <> 0 Then
+        motivo = "error " & Err.Number & ": " & Err.Description
+        Set CrearFormulario = Nothing
+    End If
+    On Error GoTo 0
+End Function
 
 Private Sub BorrarHojasSobrantes(ByVal wb As Object, ByVal conservar As String)
     Dim i As Long, alertas As Boolean

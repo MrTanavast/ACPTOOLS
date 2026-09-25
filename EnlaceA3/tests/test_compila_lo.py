@@ -15,7 +15,7 @@ def adaptar(texto):
     t = re.sub(r"^\s*Attribute\s+\w+\.VB_\w+.*$", "", texto, flags=re.M)
     t = re.sub(r"Public WithEvents (\w+) As MSForms\.\w+", r"Public \1 As Object", t)
     t = re.sub(r"As MSForms\.\w+", "As Object", t)
-    t = re.sub(r"New clsA3\w+", "ZZNuevo()", t)
+    t = re.sub(r"New (clsA3\w+|frmEnlaceA3)", "ZZNuevo()", t)
     t = re.sub(r"As clsA3\w+", "As Object", t)
     t = re.sub(r"\bMe\b", "ZZYo", t)
     return t
